@@ -32,6 +32,21 @@ function buildHeroSmsStatusV2Payload({ smsCode = '', smsText = '', callCode = ''
   });
 }
 
+test('phone verification helper treats Chinese text-message resend rejection as banned number', () => {
+  const helpers = api.createPhoneVerificationHelpers({
+    addLog: async () => {},
+    getState: async () => ({}),
+    setState: async () => {},
+    sleepWithStop: async () => {},
+    throwIfStopped: () => {},
+  });
+
+  assert.equal(
+    helpers.isPhoneResendBannedNumberError('无法向此电话号码发送文本消息。请尝试其他电话号码。'),
+    true
+  );
+});
+
 test('phone verification helper requests HeroSMS numbers with fixed OpenAI and Thailand parameters', async () => {
   const requests = [];
   const helpers = api.createPhoneVerificationHelpers({
@@ -6847,7 +6862,7 @@ test('signup phone verification cancels activation when resend lands on contact-
   assert.equal(currentState.signupPhoneActivation, null);
 });
 
-test('signup phone verification cancels activation when resend lands on contact-verification 500 page but content script drops', async () => {
+test('signup phone verification cancels activation when resend lands on Chinese contact-verification 500 page but content script drops', async () => {
   const requests = [];
   const tabSnapshots = [];
   let resendAttempted = false;
@@ -6897,7 +6912,7 @@ test('signup phone verification cancels activation when resend lands on contact-
       return {
         url: 'https://auth.openai.com/contact-verification',
         title: 'auth.openai.com',
-        text: "This page isn't working auth.openai.com is currently unable to handle this request. HTTP ERROR 500",
+        text: '该网页无法正常运作 auth.openai.com 目前无法处理此请求。 HTTP ERROR 500',
       };
     },
     sendToContentScriptResilient: async (_source, message) => {
@@ -6923,7 +6938,7 @@ test('signup phone verification cancels activation when resend lands on contact-
   await assert.rejects(
     () => helpers.completeSignupPhoneVerificationFlow(1, { state: currentState }),
     (error) => {
-      assert.match(error.message, /^PHONE_RESEND_SERVER_ERROR::This page isn't working/);
+      assert.match(error.message, /^PHONE_RESEND_SERVER_ERROR::.*该网页无法正常运作/);
       return true;
     }
   );

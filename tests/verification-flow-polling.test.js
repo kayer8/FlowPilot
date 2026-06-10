@@ -1067,6 +1067,305 @@ test('verification flow uses full 2925 polling window after a rejected login cod
   assert.deepStrictEqual(submittedCodes, ['111111', '222222']);
 });
 
+test('verification flow resends and waits five seconds after a rejected 2925 login code', async () => {
+  const events = [];
+  const pollPayloads = [];
+  const completed = [];
+  const sleeps = [];
+  const codes = ['111111', '222222'];
+
+  const helpers = createVerificationFlowTestHelpers({
+    completeNodeFromBackground: async (_nodeId, payload) => {
+      completed.push(payload);
+    },
+    getState: async () => ({ mailProvider: '2925' }),
+    getTabId: async (source) => (source === 'mail-2925' ? 2 : 1),
+    sendToContentScript: async (_source, message) => {
+      if (message.type === 'RESEND_VERIFICATION_CODE') {
+        events.push(['resend', message.step]);
+        return { resent: true };
+      }
+      if (message.type === 'FILL_CODE') {
+        events.push(['submit', message.payload.code]);
+        return message.payload.code === '111111'
+          ? { invalidCode: true, errorText: 'Incorrect code' }
+          : { success: true };
+      }
+      return {};
+    },
+    sendToMailContentScriptResilient: async (_mail, message) => {
+      if (message.type !== 'POLL_EMAIL') {
+        return {};
+      }
+      const code = codes.shift();
+      pollPayloads.push(message.payload);
+      events.push(['poll', code]);
+      return { code, emailTimestamp: pollPayloads.length };
+    },
+    sleepWithStop: async (ms) => {
+      sleeps.push(ms);
+      events.push(['sleep', ms]);
+    },
+  });
+
+  await helpers.resolveVerificationStep(
+    8,
+    {
+      email: 'user@example.com',
+      mailProvider: '2925',
+      lastLoginCode: null,
+    },
+    { provider: '2925', label: '2925 邮箱' },
+    {
+      maxResendRequests: 0,
+      maxSubmitAttempts: 5,
+      invalidCodeResendDelayMs: 5000,
+      initialPollMaxAttempts: 5,
+      pollAttemptPlan: [2, 3, 15],
+      requestFreshCodeFirst: false,
+      filterAfterTimestamp: 123,
+      resendIntervalMs: 0,
+    }
+  );
+
+  assert.deepStrictEqual(events, [
+    ['poll', '111111'],
+    ['submit', '111111'],
+    ['resend', 8],
+    ['sleep', 5000],
+    ['poll', '222222'],
+    ['submit', '222222'],
+  ]);
+  assert.deepStrictEqual(sleeps, [5000]);
+  assert.deepStrictEqual(pollPayloads[1].excludeCodes, ['111111']);
+  assert.equal(completed[0].code, '222222');
+});
+
+test('verification flow treats unknown 2925 submit transport timeout as retryable rejected code', async () => {
+  const originalDateNow = Date.now;
+  let fakeNow = 100000;
+  Date.now = () => fakeNow;
+
+  const events = [];
+  const submittedCodes = [];
+  const completed = [];
+  const codes = ['111111', '222222'];
+
+  const helpers = createVerificationFlowTestHelpers({
+    completeNodeFromBackground: async (_nodeId, payload) => {
+      completed.push(payload);
+    },
+    getState: async () => ({ mailProvider: '2925' }),
+    getTabId: async (source) => (source === 'mail-2925' ? 2 : 1),
+    isRetryableContentScriptTransportError: () => true,
+    sendToContentScript: async (_source, message) => {
+      if (message.type === 'RESEND_VERIFICATION_CODE') {
+        events.push(['resend', message.step]);
+        return { resent: true };
+      }
+      if (message.type === 'FILL_CODE') {
+        submittedCodes.push(message.payload.code);
+        events.push(['submit', message.payload.code]);
+        if (message.payload.code === '111111') {
+          throw new Error('认证页 内容脚本 1 秒内未响应，请刷新页面后重试。');
+        }
+        return { success: true };
+      }
+      return {};
+    },
+    sendToContentScriptResilient: async (_source, message) => {
+      if (message.type === 'GET_LOGIN_AUTH_STATE') {
+        events.push(['inspect']);
+        return {
+          state: 'verification_page',
+          verificationErrorText: '',
+          url: 'https://auth.openai.com/email-verification',
+        };
+      }
+      return {};
+    },
+    sendToMailContentScriptResilient: async (_mail, message) => {
+      if (message.type !== 'POLL_EMAIL') {
+        return {};
+      }
+      const code = codes.shift();
+      events.push(['poll', code]);
+      return { code, emailTimestamp: submittedCodes.length + 1 };
+    },
+    sleepWithStop: async (ms) => {
+      events.push(['sleep', ms]);
+      fakeNow += Math.max(1, Number(ms) || 1);
+    },
+  });
+
+  try {
+    await helpers.resolveVerificationStep(
+      8,
+      {
+        email: 'user@example.com',
+        mailProvider: '2925',
+        lastLoginCode: null,
+      },
+      { provider: '2925', label: '2925 邮箱' },
+      {
+        maxResendRequests: 0,
+        maxSubmitAttempts: 5,
+        invalidCodeResendDelayMs: 5000,
+        treatUnknownSubmitTransportAsInvalidCode: true,
+        requestFreshCodeFirst: false,
+        filterAfterTimestamp: 123,
+        resendIntervalMs: 0,
+      }
+    );
+  } finally {
+    Date.now = originalDateNow;
+  }
+
+  assert.deepStrictEqual(submittedCodes, ['111111', '222222']);
+  assert.equal(events.some((event) => event[0] === 'resend' && event[1] === 8), true);
+  assert.equal(events.some((event) => event[0] === 'sleep' && event[1] === 5000), true);
+  assert.equal(completed[0].code, '222222');
+});
+
+test('verification flow keeps 2925 invalid-code retry in place when resend response times out', async () => {
+  const events = [];
+  const submittedCodes = [];
+  const completed = [];
+  const codes = ['111111', '222222'];
+
+  const helpers = createVerificationFlowTestHelpers({
+    completeNodeFromBackground: async (_nodeId, payload) => {
+      completed.push(payload);
+    },
+    getState: async () => ({ mailProvider: '2925' }),
+    getTabId: async (source) => (source === 'mail-2925' ? 2 : 1),
+    isRetryableContentScriptTransportError: () => true,
+    sendToContentScript: async (_source, message) => {
+      if (message.type === 'RESEND_VERIFICATION_CODE') {
+        events.push(['resend', message.step]);
+        throw new Error('认证页 内容脚本 1 秒内未响应，请刷新页面后重试。');
+      }
+      if (message.type === 'FILL_CODE') {
+        submittedCodes.push(message.payload.code);
+        events.push(['submit', message.payload.code]);
+        return message.payload.code === '111111'
+          ? { invalidCode: true, errorText: 'Incorrect code' }
+          : { success: true };
+      }
+      return {};
+    },
+    sendToMailContentScriptResilient: async (_mail, message) => {
+      if (message.type !== 'POLL_EMAIL') {
+        return {};
+      }
+      const code = codes.shift();
+      events.push(['poll', code]);
+      return { code, emailTimestamp: submittedCodes.length + 1 };
+    },
+    sleepWithStop: async (ms) => {
+      events.push(['sleep', ms]);
+    },
+  });
+
+  await helpers.resolveVerificationStep(
+    8,
+    {
+      email: 'user@example.com',
+      mailProvider: '2925',
+      lastLoginCode: null,
+    },
+    { provider: '2925', label: '2925 邮箱' },
+    {
+      maxResendRequests: 0,
+      maxSubmitAttempts: 5,
+      invalidCodeResendDelayMs: 5000,
+      treatResendTransportErrorAsRequested: true,
+      requestFreshCodeFirst: false,
+      filterAfterTimestamp: 123,
+      resendIntervalMs: 0,
+    }
+  );
+
+  assert.deepStrictEqual(events, [
+    ['poll', '111111'],
+    ['submit', '111111'],
+    ['resend', 8],
+    ['sleep', 5000],
+    ['poll', '222222'],
+    ['submit', '222222'],
+  ]);
+  assert.deepStrictEqual(submittedCodes, ['111111', '222222']);
+  assert.equal(completed[0].code, '222222');
+});
+
+test('verification flow gives up after five rejected 2925 login codes', async () => {
+  const submittedCodes = [];
+  const resends = [];
+  const sleeps = [];
+  const codes = ['111111', '222222', '333333', '444444', '555555'];
+
+  const helpers = createVerificationFlowTestHelpers({
+    getState: async () => ({ mailProvider: '2925' }),
+    getTabId: async (source) => (source === 'mail-2925' ? 2 : 1),
+    sendToContentScript: async (_source, message) => {
+      if (message.type === 'RESEND_VERIFICATION_CODE') {
+        resends.push(message.step);
+        return { resent: true };
+      }
+      if (message.type === 'FILL_CODE') {
+        submittedCodes.push(message.payload.code);
+        return { invalidCode: true, errorText: 'Incorrect code' };
+      }
+      return {};
+    },
+    sendToMailContentScriptResilient: async (_mail, message) => {
+      if (message.type !== 'POLL_EMAIL') {
+        return {};
+      }
+      const code = codes.shift();
+      return { code, emailTimestamp: submittedCodes.length + 1 };
+    },
+    sleepWithStop: async (ms) => {
+      sleeps.push(ms);
+    },
+  });
+
+  await assert.rejects(
+    () => helpers.resolveVerificationStep(
+      8,
+      {
+        email: 'user@example.com',
+        mailProvider: '2925',
+        lastLoginCode: null,
+      },
+      { provider: '2925', label: '2925 邮箱' },
+      {
+        maxResendRequests: 0,
+        maxSubmitAttempts: 5,
+        invalidCodeResendDelayMs: 5000,
+        requestFreshCodeFirst: false,
+        filterAfterTimestamp: 123,
+        resendIntervalMs: 0,
+      }
+    ),
+    /步骤 8：2925 登录验证码连续 5 次被拒绝，放弃当前验证码流程。/
+  );
+
+  assert.deepStrictEqual(submittedCodes, ['111111', '222222', '333333', '444444', '555555']);
+  assert.deepStrictEqual(resends, [8, 8, 8, 8]);
+  assert.deepStrictEqual(sleeps, [5000, 5000, 5000, 5000]);
+});
+
+test('step 8 executor applies 2925 invalid-code retry settings to all login-code entry points', () => {
+  const step8Source = fs.readFileSync('flows/openai/background/steps/fetch-login-code.js', 'utf8');
+
+  assert.match(step8Source, /maxSubmitAttempts:\s*mail\.provider === '2925' \? 5 : undefined/);
+  assert.match(step8Source, /invalidCodeResendDelayMs:\s*mail\.provider === '2925' \? 5000 : undefined/);
+  assert.match(step8Source, /treatUnknownSubmitTransportAsInvalidCode:\s*mail\.provider === '2925' \? true : undefined/);
+  assert.match(step8Source, /treatResendTransportErrorAsRequested:\s*mail\.provider === '2925' \? true : undefined/);
+  assert.equal((step8Source.match(/return pollEmailVerificationCode\(/g) || []).length, 3);
+});
+
 test('verification flow keeps Hotmail request timestamp filtering on the first poll', async () => {
   const pollPayloads = [];
 

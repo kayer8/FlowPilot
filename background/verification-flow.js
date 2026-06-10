@@ -327,6 +327,15 @@
       return Math.min(20, Math.max(0, Math.floor(numeric)));
     }
 
+    function normalizeVerificationSubmitAttemptCount(value, fallback = 15) {
+      const numeric = Number(value);
+      if (!Number.isFinite(numeric)) {
+        return Math.max(1, Math.floor(Number(fallback) || 1));
+      }
+
+      return Math.min(20, Math.max(1, Math.floor(numeric)));
+    }
+
     function getVerificationRequestedAtStateKey(step) {
       if (Number(step) === 4) return 'signupVerificationRequestedAt';
       if (Number(step) === 8) return 'loginVerificationRequestedAt';
@@ -474,7 +483,7 @@
         fallbackTimeoutMs,
         Math.max(1000, Number(options.minResponseTimeoutMs) || 1000)
       );
-      if (remainingMs === null) {
+      if (Boolean(options.disableTimeBudgetCap) || remainingMs === null) {
         return Math.max(minResponseTimeoutMs, fallbackTimeoutMs);
       }
 
@@ -514,6 +523,16 @@
       };
     }
 
+    async function markVerificationCodeResendRequestedAt(step, requestedAt = Date.now()) {
+      if (step === 4) {
+        await setState({ signupVerificationRequestedAt: requestedAt });
+      }
+      if (step === 8) {
+        await setState({ loginVerificationRequestedAt: requestedAt });
+      }
+      return requestedAt;
+    }
+
     async function requestVerificationCodeResend(step, options = {}) {
       throwIfStopped();
       const signupTabId = await getTabId('openai-auth');
@@ -545,13 +564,7 @@
 
       await addLog(`步骤 ${step}：已请求新的${getVerificationCodeLabel(step)}验证码。`, 'warn');
 
-      const requestedAt = Date.now();
-      if (step === 4) {
-        await setState({ signupVerificationRequestedAt: requestedAt });
-      }
-      if (step === 8) {
-        await setState({ loginVerificationRequestedAt: requestedAt });
-      }
+      const requestedAt = await markVerificationCodeResendRequestedAt(step);
 
       const currentState = await getState();
       if (currentState.mailProvider === '2925') {
@@ -1201,6 +1214,19 @@
               const urlPart = fallback.url ? ` URL: ${fallback.url}` : '';
               throw new Error(`STEP8_RESTART_STEP7::步骤 ${completionStep}：验证码提交后认证页进入登录超时报错页，请回到步骤 ${authLoginStep} 重新开始。${urlPart}`.trim());
             }
+            if (options.treatUnknownSubmitTransportAsInvalidCode) {
+              await addLog('验证码提交后通信中断，且未能确认页面已进入下一阶段；按当前验证码失败处理并继续请求新验证码。', 'warn', {
+                step: completionStep,
+                stepKey: 'fetch-login-code',
+              });
+              return {
+                invalidCode: true,
+                errorText: err?.message || '验证码提交后认证页内容脚本未响应。',
+                url: fallback.url || fallback.snapshot?.url || '',
+                transportRecovered: false,
+                transportUnknown: true,
+              };
+            }
           }
           throw err;
         }
@@ -1251,6 +1277,19 @@
               const urlPart = fallback.url ? ` URL: ${fallback.url}` : '';
               throw new Error(`STEP8_RESTART_STEP7::步骤 ${completionStep}：验证码提交后认证页进入登录超时报错页，请回到步骤 ${authLoginStep} 重新开始。${urlPart}`.trim());
             }
+            if (options.treatUnknownSubmitTransportAsInvalidCode) {
+              await addLog('验证码提交后通信中断，且未能确认页面已进入下一阶段；按当前验证码失败处理并继续请求新验证码。', 'warn', {
+                step: completionStep,
+                stepKey: 'fetch-login-code',
+              });
+              return {
+                invalidCode: true,
+                errorText: err?.message || '验证码提交后认证页内容脚本未响应。',
+                url: fallback.url || fallback.snapshot?.url || '',
+                transportRecovered: false,
+                transportUnknown: true,
+              };
+            }
           }
           throw err;
         }
@@ -1294,8 +1333,15 @@
           getLegacyVerificationResendCountDefault(step, { requestFreshCodeFirst })
         )
         : getConfiguredVerificationResendCount(step, state, { requestFreshCodeFirst });
-      const maxSubmitAttempts = mail.provider === LUCKMAIL_PROVIDER ? 3 : 15;
+      const maxSubmitAttempts = options.maxSubmitAttempts !== undefined
+        ? normalizeVerificationSubmitAttemptCount(
+          options.maxSubmitAttempts,
+          mail.provider === LUCKMAIL_PROVIDER ? 3 : 15
+        )
+        : (mail.provider === LUCKMAIL_PROVIDER ? 3 : 15);
       const resendIntervalMs = Math.max(0, Number(options.resendIntervalMs) || 0);
+      const invalidCodeResendDelayMs = Math.max(0, Number(options.invalidCodeResendDelayMs) || 0);
+      const useInvalidCodeResendFlow = invalidCodeResendDelayMs > 0;
       const externalOnResendRequestedAt = typeof options.onResendRequestedAt === 'function'
         ? options.onResendRequestedAt
         : null;
@@ -1396,12 +1442,40 @@
             await addLog(`步骤 ${step}：验证码被页面拒绝：${submitResult.errorText || result.code}`, 'warn');
 
             if (attempt >= maxSubmitAttempts) {
+              if (mail.provider === '2925' && step === 8) {
+                throw new Error(`步骤 ${step}：2925 登录验证码连续 ${maxSubmitAttempts} 次被拒绝，放弃当前验证码流程。`);
+              }
               throw new Error(`步骤 ${step}：验证码连续失败，已达到 ${maxSubmitAttempts} 次重试上限。`);
             }
 
             if (mail.provider === LUCKMAIL_PROVIDER) {
               await addLog(`步骤 ${step}：LuckMail 验证码提交失败，等待 15 秒后重新轮询 /code 接口（${attempt + 1}/${maxSubmitAttempts}）...`, 'warn');
               await sleepWithStop(15000);
+              continue;
+            }
+
+            if (useInvalidCodeResendFlow) {
+              try {
+                lastResendAt = await requestVerificationCodeResend(step, options);
+              } catch (err) {
+                const canContinueAfterUnconfirmedResend = Boolean(options.treatResendTransportErrorAsRequested)
+                  && isRetryableVerificationTransportError(err);
+                if (isStopError(err) || !canContinueAfterUnconfirmedResend) {
+                  throw err;
+                }
+                lastResendAt = await markVerificationCodeResendRequestedAt(step);
+                await addLog(
+                  `步骤 ${step}：重新发送验证码后认证页通信中断，无法确认按钮返回结果；按已尝试重发处理，继续等待新验证码。原始错误：${err?.message || err}`,
+                  'warn'
+                );
+              }
+              remainingAutomaticResendCount = Math.max(0, remainingAutomaticResendCount - 1);
+              await updateFilterAfterTimestampForVerificationStep(lastResendAt);
+              await addLog(
+                `步骤 ${step}：验证码提交失败后已请求新验证码，等待 ${Math.ceil(invalidCodeResendDelayMs / 1000)} 秒后重新轮询邮箱（${attempt + 1}/${maxSubmitAttempts}）...`,
+                'warn'
+              );
+              await sleepWithStop(invalidCodeResendDelayMs);
               continue;
             }
 

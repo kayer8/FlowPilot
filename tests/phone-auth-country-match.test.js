@@ -523,6 +523,174 @@ test('phone auth probes WhatsApp resend channel without clicking', async () => {
   }
 });
 
+test('phone auth waits five seconds after resend and catches Chinese server error page', async () => {
+  const originalDocument = global.document;
+  const originalLocation = global.location;
+  const originalWindow = global.window;
+  let clickCount = 0;
+  const sleeps = [];
+  const fakeResendButton = {
+    disabled: false,
+    textContent: 'Resend code',
+    getAttribute() {
+      return '';
+    },
+    click() {
+      clickCount += 1;
+      global.location = {
+        href: 'https://auth.openai.com/contact-verification',
+        pathname: '/contact-verification',
+      };
+    },
+  };
+  const fakePhoneForm = {
+    querySelectorAll(selector) {
+      if (selector === 'button, input[type="submit"], input[type="button"]') {
+        return [fakeResendButton];
+      }
+      return [];
+    },
+  };
+
+  global.document = {
+    title: 'auth.openai.com',
+    querySelector(selector) {
+      if (selector === 'form[action*="/phone-verification" i]') {
+        return fakePhoneForm;
+      }
+      return null;
+    },
+    querySelectorAll() {
+      return [];
+    },
+  };
+  global.location = {
+    href: 'https://auth.openai.com/phone-verification',
+    pathname: '/phone-verification',
+  };
+  global.window = global;
+
+  const helpers = api.createPhoneAuthHelpers({
+    fillInput: () => {},
+    getActionText: (element) => String(element?.textContent || ''),
+    getPageTextSnapshot: () => (
+      global.location.pathname === '/contact-verification'
+        ? '该网页无法正常运作 auth.openai.com 目前无法处理此请求。 HTTP ERROR 500'
+        : 'Enter the code sent to your phone.'
+    ),
+    getVerificationErrorText: () => '',
+    humanPause: async () => {},
+    isActionEnabled: () => true,
+    isAddPhonePageReady: () => false,
+    isConsentReady: () => false,
+    isPhoneVerificationPageReady: () => true,
+    isVisibleElement: () => true,
+    simulateClick: (element) => {
+      element?.click?.();
+    },
+    sleep: async (ms) => {
+      sleeps.push(ms);
+    },
+    throwIfStopped: () => {},
+    waitForElement: async () => null,
+  });
+
+  try {
+    await assert.rejects(
+      () => helpers.resendPhoneVerificationCode(10000),
+      /PHONE_RESEND_SERVER_ERROR::.*该网页无法正常运作/
+    );
+    assert.equal(clickCount, 1);
+    assert.equal(sleeps.includes(5000), true);
+  } finally {
+    global.document = originalDocument;
+    global.location = originalLocation;
+    global.window = originalWindow;
+  }
+});
+
+test('phone auth waits five seconds after resend and catches Chinese text-message banned page', async () => {
+  const originalDocument = global.document;
+  const originalLocation = global.location;
+  const originalWindow = global.window;
+  let clickCount = 0;
+  const sleeps = [];
+  const fakeResendButton = {
+    disabled: false,
+    textContent: 'Resend code',
+    getAttribute() {
+      return '';
+    },
+    click() {
+      clickCount += 1;
+    },
+  };
+  const fakePhoneForm = {
+    querySelectorAll(selector) {
+      if (selector === 'button, input[type="submit"], input[type="button"]') {
+        return [fakeResendButton];
+      }
+      return [];
+    },
+  };
+
+  global.document = {
+    title: 'Verify your phone',
+    querySelector(selector) {
+      if (selector === 'form[action*="/phone-verification" i]') {
+        return fakePhoneForm;
+      }
+      return null;
+    },
+    querySelectorAll() {
+      return [];
+    },
+  };
+  global.location = {
+    href: 'https://auth.openai.com/phone-verification',
+    pathname: '/phone-verification',
+  };
+  global.window = global;
+
+  const helpers = api.createPhoneAuthHelpers({
+    fillInput: () => {},
+    getActionText: (element) => String(element?.textContent || ''),
+    getPageTextSnapshot: () => (
+      clickCount > 0
+        ? '无法向此电话号码发送文本消息。请尝试其他电话号码。'
+        : 'Enter the code sent to your phone.'
+    ),
+    getVerificationErrorText: () => '',
+    humanPause: async () => {},
+    isActionEnabled: () => true,
+    isAddPhonePageReady: () => false,
+    isConsentReady: () => false,
+    isPhoneVerificationPageReady: () => true,
+    isVisibleElement: () => true,
+    simulateClick: (element) => {
+      element?.click?.();
+    },
+    sleep: async (ms) => {
+      sleeps.push(ms);
+    },
+    throwIfStopped: () => {},
+    waitForElement: async () => null,
+  });
+
+  try {
+    await assert.rejects(
+      () => helpers.resendPhoneVerificationCode(10000),
+      /PHONE_RESEND_BANNED_NUMBER::.*无法向此电话号码发送文本消息/
+    );
+    assert.equal(clickCount, 1);
+    assert.equal(sleeps.includes(5000), true);
+  } finally {
+    global.document = originalDocument;
+    global.location = originalLocation;
+    global.window = originalWindow;
+  }
+});
+
 test('phone auth exposes resend page error checks for banned numbers', () => {
   const originalLocation = global.location;
   const originalDocument = global.document;

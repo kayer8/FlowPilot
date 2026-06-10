@@ -501,7 +501,7 @@
       if (!text) {
         return false;
       }
-      return /无法向此电话号码发送验证码|无法向.*(?:电话号码|手机号|号码).*发送(?:验证码|短信)|(?:不能|无法).*发送.*(?:验证码|短信).*(?:电话号码|手机号|号码)|(?:cannot|can't|could\s*not|couldn't|unable\s+to)\s+(?:send|deliver).{0,80}(?:verification\s+code|code|sms|text(?:\s+message)?).{0,80}(?:phone|number)|(?:verification\s+code|sms|text(?:\s+message)?).{0,80}(?:cannot|can't|could\s*not|couldn't|unable\s+to).{0,80}(?:send|deliver)/i.test(text);
+      return /无法向此电话号码发送验证码|无法向.*(?:电话号码|手机号|号码).*发送(?:验证码|短信|文本消息)|(?:不能|无法).*发送.*(?:验证码|短信|文本消息).*(?:电话号码|手机号|号码)|(?:cannot|can't|could\s*not|couldn't|unable\s+to)\s+(?:send|deliver).{0,80}(?:verification\s+code|code|sms|text(?:\s+message)?).{0,80}(?:phone|number)|(?:verification\s+code|sms|text(?:\s+message)?).{0,80}(?:cannot|can't|could\s*not|couldn't|unable\s+to).{0,80}(?:send|deliver)/i.test(text);
     }
 
     function isWhatsAppPhoneResendResult(value) {
@@ -1684,7 +1684,7 @@
       if (message.startsWith(PHONE_RESEND_BANNED_NUMBER_ERROR_PREFIX)) {
         return true;
       }
-      return /无法向此电话号码发送短信|无法向此手机号发送短信|无法发送短信到此电话号码|无法发送短信到此手机号|can(?:not|'t)\s+send\s+(?:an?\s+)?(?:sms|text(?:\s+message)?)\s+to\s+(?:this|that)\s+(?:phone\s+)?number|unable\s+to\s+send\s+(?:an?\s+)?(?:sms|text(?:\s+message)?)\s+to\s+(?:this|that)\s+(?:phone\s+)?number/i.test(message);
+      return /无法向此电话号码发送(?:短信|文本消息)|无法向此手机号发送(?:短信|文本消息)|无法发送(?:短信|文本消息)到此电话号码|无法发送(?:短信|文本消息)到此手机号|can(?:not|'t)\s+send\s+(?:an?\s+)?(?:sms|text(?:\s+message)?)\s+to\s+(?:this|that)\s+(?:phone\s+)?number|unable\s+to\s+send\s+(?:an?\s+)?(?:sms|text(?:\s+message)?)\s+to\s+(?:this|that)\s+(?:phone\s+)?number/i.test(message);
     }
 
     function isPhoneResendServerError(error) {
@@ -1695,7 +1695,7 @@
       if (message.startsWith(PHONE_RESEND_SERVER_ERROR_PREFIX)) {
         return true;
       }
-      return /this\s+page\s+isn['’]?t\s+working|currently\s+unable\s+to\s+handle\s+this\s+request|http\s+error\s+500|500\s+internal\s+server\s+error/i.test(message);
+      return /this\s+page\s+isn['’]?t\s+working|该网页无法正常运作|currently\s+unable\s+to\s+handle\s+this\s+request|http\s+error\s+500|500\s+internal\s+server\s+error/i.test(message);
     }
 
     function buildPhoneResendServerError(error) {
@@ -7186,6 +7186,7 @@
       finalizeLoginPhoneActivationAfterSuccess,
       finalizeSignupPhoneActivationAfterSuccess,
       isPhoneResendBannedNumberError,
+      isPhoneResendServerError,
       normalizeActivation,
       pollPhoneActivationCode,
       prepareLoginPhoneActivation,

@@ -716,6 +716,7 @@
       return {
         localhostUrl: callback.url,
         verifiedStatus,
+        sub2apiCallbackVerified: true,
       };
     }
 

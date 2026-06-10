@@ -145,6 +145,59 @@ test('sub2api api imports current ChatGPT session through codex-session endpoint
   );
 });
 
+test('sub2api api marks successful OAuth callback verification for phone cleanup', async () => {
+  const apiModule = loadSub2ApiApiModule();
+  const api = apiModule.createSub2ApiApi({
+    addLog: async () => {},
+    normalizeSub2ApiUrl: (value) => value,
+    DEFAULT_SUB2API_GROUP_NAME: 'codex',
+    fetchImpl: async (url, options = {}) => {
+      const parsed = new URL(url);
+      const body = options.body ? JSON.parse(options.body) : null;
+
+      if (parsed.pathname === '/api/v1/auth/login') {
+        return createJsonResponse({ code: 0, data: { access_token: 'admin-token' } });
+      }
+      if (parsed.pathname === '/api/v1/admin/groups/all') {
+        return createJsonResponse({
+          code: 0,
+          data: [{ id: 5, name: 'codex', platform: 'openai' }],
+        });
+      }
+      if (parsed.pathname === '/api/v1/admin/openai/exchange-code') {
+        assert.equal(body.session_id, 'session-1');
+        assert.equal(body.code, 'callback-code');
+        return createJsonResponse({
+          code: 0,
+          data: {
+            access_token: 'openai-access',
+            refresh_token: 'openai-refresh',
+            email: 'flow@example.com',
+          },
+        });
+      }
+      if (parsed.pathname === '/api/v1/admin/accounts') {
+        return createJsonResponse({ code: 0, data: { id: 11 } });
+      }
+
+      return createJsonResponse({ code: 1, message: `unexpected path ${parsed.pathname}` }, 404);
+    },
+  });
+
+  const result = await api.submitOpenAiCallback({
+    localhostUrl: 'http://localhost:1455/auth/callback?code=callback-code&state=oauth-state',
+    sub2apiUrl: 'https://sub.example/admin/accounts',
+    sub2apiEmail: 'admin@example.com',
+    sub2apiPassword: 'secret',
+    sub2apiGroupName: 'codex',
+    sub2apiSessionId: 'session-1',
+    sub2apiOAuthState: 'oauth-state',
+  });
+
+  assert.equal(result.verifiedStatus, 'SUB2API 已创建账号 #11');
+  assert.equal(result.sub2apiCallbackVerified, true);
+});
+
 test('sub2api session import falls back to JWT email before registration email', async () => {
   const apiModule = loadSub2ApiApiModule();
   const jwtToken = createJwtToken({ email: 'jwt@example.com' });

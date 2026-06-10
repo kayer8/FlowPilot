@@ -178,6 +178,7 @@ test('SUB2API step 10 uses the same proxy for code exchange and account creation
   assert.equal(createCall.body.proxy_id, 7);
   assert.equal(createCall.body.group_ids[0], 5);
   assert.equal(context.completed[0].nodeId, 'platform-verify');
+  assert.equal(context.completed[0].payload.sub2apiCallbackVerified, true);
   assert.equal(context.completed[0].payload.visibleStep, 10);
 });
 

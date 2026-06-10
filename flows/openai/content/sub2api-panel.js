@@ -678,6 +678,7 @@ async function step9_submitOpenAiCallback(payload = {}) {
   reportComplete('platform-verify', {
     localhostUrl: callback.url,
     verifiedStatus,
+    sub2apiCallbackVerified: true,
     visibleStep,
   });
   openAccountsPageSoon(origin);

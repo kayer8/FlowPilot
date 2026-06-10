@@ -9423,10 +9423,13 @@ async function restartSignupPhonePasswordMismatchAttemptFromNode(nodeId, restart
   const reasonLabel = /PHONE_RESEND_BANNED_NUMBER::|无法向此(?:电话|手机)号码发送短信|无法发送短信到此(?:电话|手机)号码|unable\s+to\s+send\s+(?:an?\s+)?(?:sms|text(?:\s+message)?)\s+to\s+(?:this|that)\s+(?:phone\s+)?number/i
     .test(errorMessage)
     ? '当前注册手机号无法接收短信'
-    : (/与此(?:电话|手机)号码相关联的帐户已存在|account\s+associated\s+with\s+this\s+phone\s+number\s+already\s+exists/i
+    : (/PHONE_RESEND_SERVER_ERROR::|该网页无法正常运作|this\s+page\s+isn['’]?t\s+working|http\s+error\s+500|500\s+internal\s+server\s+error/i
       .test(errorMessage)
-      ? '注册手机号异常'
-      : '手机号/密码不匹配');
+      ? '手机号验证码重发页面异常'
+      : (/与此(?:电话|手机)号码相关联的帐户已存在|account\s+associated\s+with\s+this\s+phone\s+number\s+already\s+exists/i
+        .test(errorMessage)
+        ? '注册手机号异常'
+        : '手机号/密码不匹配'));
   const normalizedNodeId = String(nodeId || '').trim() || 'fetch-signup-code';
   await addLog(
     `节点 ${normalizedNodeId}：检测到${reasonLabel}，准备丢弃当前注册手机号并回到节点 open-chatgpt 重新开始（第 ${restartCount} 次重开）。${phoneSuffix}${emailSuffix}原因：${errorMessage}`,
@@ -10934,6 +10937,92 @@ async function reportCompletedStepSideEffectError(step, error) {
   return reportCompletedNodeSideEffectError(getNodeIdByStepForState(step, state), error);
 }
 
+function getSignupPhoneActivationForDestroy(state = {}) {
+  return state?.signupPhoneActivation || state?.signupPhoneCompletedActivation || null;
+}
+
+function hasSignupPhoneStateForDestroy(state = {}) {
+  return Boolean(
+    getSignupPhoneActivationForDestroy(state)
+    || String(state?.signupPhoneNumber || '').trim()
+    || (
+      String(state?.accountIdentifierType || '').trim().toLowerCase() === 'phone'
+      && String(state?.accountIdentifier || '').trim()
+    )
+  );
+}
+
+function hasMail2925RegistrationEmailStateForDestroy(state = {}) {
+  const currentEmail = String(state?.email || '').trim();
+  return Boolean(
+    currentEmail
+    && String(state?.mailProvider || '').trim().toLowerCase() === '2925'
+    && isReusableGeneratedAliasEmail(state, currentEmail)
+  );
+}
+
+async function clearDestroyedSignupPhoneState(state = {}) {
+  const updates = {
+    phoneNumber: '',
+    signupPhoneNumber: '',
+    signupPhoneActivation: null,
+    signupPhoneCompletedActivation: null,
+    signupPhoneVerificationRequestedAt: null,
+    signupPhoneVerificationPurpose: '',
+    currentPhoneVerificationCode: '',
+    currentPhoneVerificationCountdownEndsAt: 0,
+    currentPhoneVerificationCountdownWindowIndex: 0,
+    currentPhoneVerificationCountdownWindowTotal: 0,
+  };
+  if (String(state?.accountIdentifierType || '').trim().toLowerCase() === 'phone') {
+    updates.accountIdentifierType = null;
+    updates.accountIdentifier = '';
+  }
+  await setState(updates);
+  broadcastDataUpdate(updates);
+}
+
+async function clearDestroyedMail2925RegistrationEmailState(state = {}) {
+  const updates = {
+    email: null,
+    registrationEmailState: { ...DEFAULT_REGISTRATION_EMAIL_STATE },
+  };
+  const currentEmail = String(state?.email || '').trim().toLowerCase();
+  const accountIdentifier = String(state?.accountIdentifier || '').trim().toLowerCase();
+  if (
+    String(state?.accountIdentifierType || '').trim().toLowerCase() === 'email'
+    && currentEmail
+    && accountIdentifier === currentEmail
+  ) {
+    updates.accountIdentifierType = null;
+    updates.accountIdentifier = '';
+  }
+  await setState(updates);
+  broadcastDataUpdate(updates);
+}
+
+async function destroySignupRuntimeIdentityAfterSub2ApiCallbackSuccess(nodeId, payload = {}, state = {}) {
+  if (
+    String(nodeId || '').trim() !== 'platform-verify'
+    || payload?.sub2apiCallbackVerified !== true
+  ) {
+    return false;
+  }
+
+  let destroyed = false;
+  if (hasSignupPhoneStateForDestroy(state)) {
+    await clearDestroyedSignupPhoneState(state);
+    await addLog('SUB2API 回调验证成功，已清空插件内当前注册手机号状态。', 'ok', { nodeId: 'platform-verify' });
+    destroyed = true;
+  }
+  if (hasMail2925RegistrationEmailStateForDestroy(state)) {
+    await clearDestroyedMail2925RegistrationEmailState(state);
+    await addLog('SUB2API 回调验证成功，已清空插件内当前 2925 注册邮箱状态。', 'ok', { nodeId: 'platform-verify' });
+    destroyed = true;
+  }
+  return destroyed;
+}
+
 async function runCompletedNodeSideEffects(nodeId, payload, completionState, lastNodeId) {
   await handleNodeData(nodeId, payload);
   if (nodeId === lastNodeId) {
@@ -10966,6 +11055,7 @@ async function completeNodeFromBackground(nodeId, payload = {}) {
   await addLog('已完成', 'ok', { nodeId: normalizedNodeId });
 
   if (normalizedNodeId === lastNodeId) {
+    await destroySignupRuntimeIdentityAfterSub2ApiCallbackSuccess(normalizedNodeId, payload, completionState || latestState);
     notifyNodeComplete(normalizedNodeId, payload);
     void runCompletedNodeSideEffects(normalizedNodeId, payload, completionState, lastNodeId)
       .catch((error) => reportCompletedNodeSideEffectError(normalizedNodeId, error));
@@ -13181,7 +13271,10 @@ async function runAutoSequenceFromNodeGraph(startNodeId, context = {}) {
         const isPhoneResendBanned = typeof phoneVerificationHelpers !== 'undefined'
           && typeof phoneVerificationHelpers?.isPhoneResendBannedNumberError === 'function'
           && phoneVerificationHelpers.isPhoneResendBannedNumberError(err);
-        if (isSignupPhonePasswordMismatchFailure(err) || isPhoneResendBanned) {
+        const isPhoneResendServerError = typeof phoneVerificationHelpers !== 'undefined'
+          && typeof phoneVerificationHelpers?.isPhoneResendServerError === 'function'
+          && phoneVerificationHelpers.isPhoneResendServerError(err);
+        if (isSignupPhonePasswordMismatchFailure(err) || isPhoneResendBanned || isPhoneResendServerError) {
           await restartSignupPhonePasswordMismatchAttemptFromNode('fetch-signup-code', step4RestartCount, err);
         } else {
           const preservedState = await getState();

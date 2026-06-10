@@ -659,6 +659,10 @@
         },
         targetEmail: fixedTargetEmail,
         maxResendRequests: mail.provider === '2925' ? 2 : undefined,
+        maxSubmitAttempts: mail.provider === '2925' ? 5 : undefined,
+        invalidCodeResendDelayMs: mail.provider === '2925' ? 5000 : undefined,
+        treatUnknownSubmitTransportAsInvalidCode: mail.provider === '2925' ? true : undefined,
+        treatResendTransportErrorAsRequested: mail.provider === '2925' ? true : undefined,
         initialPollMaxAttempts: mail.provider === '2925' ? 5 : undefined,
         pollAttemptPlan: mail.provider === '2925' ? [2, 3, 15] : undefined,
         resendIntervalMs: mail.provider === LUCKMAIL_PROVIDER
