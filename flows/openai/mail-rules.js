@@ -45,12 +45,14 @@
   function createOpenAiMailRules(deps = {}) {
     const {
       getHotmailVerificationRequestTimestamp = () => 0,
+      MAIL_2925_IMAP_PROVIDER = '2925-imap',
       MAIL_2925_VERIFICATION_INTERVAL_MS = 15000,
       MAIL_2925_VERIFICATION_MAX_ATTEMPTS = 15,
     } = deps;
 
     function isMail2925Provider(state = {}) {
-      return String(state?.mailProvider || '').trim().toLowerCase() === '2925';
+      const provider = String(state?.mailProvider || '').trim().toLowerCase();
+      return provider === '2925' || provider === MAIL_2925_IMAP_PROVIDER;
     }
 
     function shouldMatchMail2925TargetEmail(state = {}) {

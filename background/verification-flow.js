@@ -24,6 +24,7 @@
       isMail2925LimitReachedError,
       isStopError,
       LUCKMAIL_PROVIDER,
+      MAIL_2925_IMAP_PROVIDER = '2925-imap',
       YYDS_MAIL_PROVIDER = 'yyds-mail',
       MAIL_2925_VERIFICATION_INTERVAL_MS,
       MAIL_2925_VERIFICATION_MAX_ATTEMPTS,
@@ -31,6 +32,7 @@
       pollCloudMailVerificationCode,
       pollHotmailVerificationCode,
       pollLuckmailVerificationCode,
+      pollMail2925ImapVerificationCode,
       pollYydsMailVerificationCode,
       sendToContentScript,
       sendToContentScriptResilient,
@@ -437,7 +439,8 @@
         return externalBuildVerificationPollPayload(step, state, overrides);
       }
       const normalizedStep = Number(step) === 4 ? 4 : 8;
-      const is2925Provider = state?.mailProvider === '2925';
+      const normalizedProvider = String(state?.mailProvider || '').trim().toLowerCase();
+      const is2925Provider = normalizedProvider === '2925' || normalizedProvider === MAIL_2925_IMAP_PROVIDER;
       const mail2925MatchTargetEmail = is2925Provider
         && String(state?.mail2925Mode || '').trim().toLowerCase() === 'receive';
       return {
@@ -999,6 +1002,13 @@
           ...cleanPollOverrides,
         }, cleanPollOverrides, `轮询${getVerificationCodeLabel(step)}验证码邮箱`);
         return pollCloudMailVerificationCode(step, state, timedPoll.payload);
+      }
+      if (mail.provider === MAIL_2925_IMAP_PROVIDER) {
+        const timedPoll = await applyMailPollingTimeBudget(step, {
+          ...getVerificationPollPayload(step, state),
+          ...cleanPollOverrides,
+        }, cleanPollOverrides, `轮询${getVerificationCodeLabel(step)}验证码邮箱`);
+        return pollMail2925ImapVerificationCode(step, state, timedPoll.payload);
       }
       if (mail.provider === YYDS_MAIL_PROVIDER) {
         const timedPoll = await applyMailPollingTimeBudget(step, {

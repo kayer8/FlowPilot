@@ -18,6 +18,7 @@
       HOTMAIL_PROVIDER,
       isTabAlive,
       LUCKMAIL_PROVIDER,
+      MAIL_2925_IMAP_PROVIDER = '2925-imap',
       CLOUDFLARE_TEMP_EMAIL_PROVIDER,
       CLOUD_MAIL_PROVIDER = 'cloudmail',
       resolveVerificationStep,
@@ -101,7 +102,7 @@
       const mail = getMailConfig(state);
       if (mail.error) throw new Error(mail.error);
 
-      const verificationFilterAfterTimestamp = mail.provider === '2925'
+      const verificationFilterAfterTimestamp = (mail.provider === '2925' || mail.provider === MAIL_2925_IMAP_PROVIDER)
         ? Math.max(0, stepStartedAt - MAIL_2925_FILTER_LOOKBACK_MS)
         : stepStartedAt;
 
@@ -118,6 +119,7 @@
       if (
         mail.provider === HOTMAIL_PROVIDER
         || mail.provider === LUCKMAIL_PROVIDER
+        || mail.provider === MAIL_2925_IMAP_PROVIDER
         || mail.provider === CLOUDFLARE_TEMP_EMAIL_PROVIDER
         || mail.provider === CLOUD_MAIL_PROVIDER
       ) {
@@ -144,6 +146,7 @@
       const shouldRequestFreshCodeFirst = ![
         HOTMAIL_PROVIDER,
         LUCKMAIL_PROVIDER,
+        MAIL_2925_IMAP_PROVIDER,
         CLOUDFLARE_TEMP_EMAIL_PROVIDER,
         CLOUD_MAIL_PROVIDER,
       ].includes(mail.provider);
@@ -152,12 +155,12 @@
       await resolveVerificationStep(4, state, mail, {
         filterAfterTimestamp: verificationFilterAfterTimestamp,
         sessionKey: verificationSessionKey,
-        disableTimeBudgetCap: mail.provider === '2925',
+        disableTimeBudgetCap: mail.provider === '2925' || mail.provider === MAIL_2925_IMAP_PROVIDER,
         requestFreshCodeFirst: shouldRequestFreshCodeFirst,
         signupProfile,
         resendIntervalMs: mail.provider === LUCKMAIL_PROVIDER
           ? 15000
-          : ((mail.provider === HOTMAIL_PROVIDER || mail.provider === '2925')
+          : ((mail.provider === HOTMAIL_PROVIDER || mail.provider === '2925' || mail.provider === MAIL_2925_IMAP_PROVIDER)
             ? 0
             : STANDARD_MAIL_VERIFICATION_RESEND_INTERVAL_MS),
       });

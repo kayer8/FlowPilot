@@ -75,8 +75,9 @@
     return nodeId === DESKTOP_AUTHORIZE_NODE_ID ? 8 : 4;
   }
 
-  function isMail2925Provider(state = {}) {
-    return cleanString(state?.mailProvider).toLowerCase() === '2925';
+  function isMail2925Provider(state = {}, mail2925ImapProvider = '2925-imap') {
+    const provider = cleanString(state?.mailProvider).toLowerCase();
+    return provider === '2925' || provider === cleanString(mail2925ImapProvider).toLowerCase();
   }
 
   function shouldMatchMail2925TargetEmail(state = {}) {
@@ -87,6 +88,7 @@
   function createKiroMailRules(deps = {}) {
     const {
       LUCKMAIL_PROVIDER = 'luckmail-api',
+      MAIL_2925_IMAP_PROVIDER = '2925-imap',
       MAIL_2925_VERIFICATION_INTERVAL_MS = 15000,
       MAIL_2925_VERIFICATION_MAX_ATTEMPTS = 15,
     } = deps;
@@ -97,7 +99,7 @@
       const runtimeState = readKiroRuntime(state);
       const targetEmail = cleanString(runtimeState.register?.email || state?.email).toLowerCase();
       const normalizedProvider = cleanString(state?.mailProvider).toLowerCase();
-      const mail2925Provider = isMail2925Provider(state);
+      const mail2925Provider = isMail2925Provider(state, MAIL_2925_IMAP_PROVIDER);
       const luckmailProvider = normalizedProvider === cleanString(LUCKMAIL_PROVIDER).toLowerCase();
 
       return {

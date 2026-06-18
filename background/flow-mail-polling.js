@@ -79,10 +79,12 @@
       isStopError = null,
       isTabAlive = async () => false,
       LUCKMAIL_PROVIDER = 'luckmail-api',
+      MAIL_2925_IMAP_PROVIDER = '2925-imap',
       pollCloudflareTempEmailVerificationCode = null,
       pollCloudMailVerificationCode = null,
       pollHotmailVerificationCode = null,
       pollLuckmailVerificationCode = null,
+      pollMail2925ImapVerificationCode = null,
       pollYydsMailVerificationCode = null,
       reuseOrCreateTab = async () => null,
       sendToMailContentScriptResilient = null,
@@ -106,6 +108,10 @@
       [normalizeProviderId(CLOUD_MAIL_PROVIDER), {
         label: 'Cloud Mail',
         poll: pollCloudMailVerificationCode,
+      }],
+      [normalizeProviderId(MAIL_2925_IMAP_PROVIDER), {
+        label: '2925 IMAP',
+        poll: pollMail2925ImapVerificationCode,
       }],
       [normalizeProviderId(YYDS_MAIL_PROVIDER), {
         label: 'YYDS Mail',

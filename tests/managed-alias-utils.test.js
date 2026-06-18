@@ -18,6 +18,10 @@ test('managed alias utils build 2925 email from full base email', () => {
     api.buildManagedAliasEmail('2925', 'demo@2925.com', '123456'),
     'demo123456@2925.com'
   );
+  assert.equal(
+    api.buildManagedAliasEmail('2925-imap', 'demo@2925.com', '123456'),
+    'demo123456@2925.com'
+  );
 });
 
 test('managed alias utils validate provider email with or without configured base email', () => {
@@ -34,4 +38,6 @@ test('managed alias utils keep 2925 alias generation behind provide mode only', 
   assert.equal(api.usesManagedAliasGeneration('gmail'), true);
   assert.equal(api.usesManagedAliasGeneration('2925', { mail2925Mode: 'provide' }), true);
   assert.equal(api.usesManagedAliasGeneration('2925', { mail2925Mode: 'receive' }), false);
+  assert.equal(api.usesManagedAliasGeneration('2925-imap', { mail2925Mode: 'provide' }), true);
+  assert.equal(api.usesManagedAliasGeneration('2925-imap', { mail2925Mode: 'receive' }), false);
 });

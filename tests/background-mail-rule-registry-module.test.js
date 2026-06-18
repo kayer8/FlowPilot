@@ -137,6 +137,37 @@ test('mail rule registry rejects unknown active flow ids instead of silently usi
   );
 });
 
+test('mail rule registry applies 2925 rules to 2925 imap provider', () => {
+  const registrySource = fs.readFileSync('background/mail-rule-registry.js', 'utf8');
+  const openAiSource = fs.readFileSync('flows/openai/mail-rules.js', 'utf8');
+  const registryApi = new Function('self', `${registrySource}; return self.MultiPageBackgroundMailRuleRegistry;`)({});
+  const openAiApi = new Function('self', `${openAiSource}; return self.MultiPageOpenAiMailRules;`)({});
+  const openAiMailRules = openAiApi.createOpenAiMailRules({
+    getHotmailVerificationRequestTimestamp: () => 987654,
+    MAIL_2925_IMAP_PROVIDER: '2925-imap',
+    MAIL_2925_VERIFICATION_INTERVAL_MS: 16000,
+    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 17,
+  });
+  const registry = registryApi.createMailRuleRegistry({
+    defaultFlowId: 'openai',
+    flowBuilders: {
+      openai: openAiMailRules,
+    },
+  });
+
+  const payload = registry.buildVerificationPollPayload(4, {
+    activeFlowId: 'openai',
+    email: 'user@example.com',
+    mailProvider: '2925-imap',
+    mail2925Mode: 'receive',
+  });
+
+  assert.equal(payload.filterAfterTimestamp, 0);
+  assert.equal(payload.mail2925MatchTargetEmail, true);
+  assert.equal(payload.maxAttempts, 17);
+  assert.equal(payload.intervalMs, 16000);
+});
+
 test('mail rule registry exposes Kiro AWS verification poll payloads by node', () => {
   const stateSource = fs.readFileSync('flows/kiro/background/state.js', 'utf8');
   const registrySource = fs.readFileSync('background/mail-rule-registry.js', 'utf8');

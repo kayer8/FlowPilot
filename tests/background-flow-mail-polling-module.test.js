@@ -54,6 +54,49 @@ test('flow mail polling service dispatches API mail providers through shared hel
   assert.equal(logs.some((entry) => entry.message.includes('Hotmail')), true);
 });
 
+test('flow mail polling service dispatches 2925 imap through API handler without browser tab', async () => {
+  const api = loadFlowMailPollingApi();
+  let imapCall = null;
+  let openedBrowserMail = false;
+  const service = api.createFlowMailPollingService({
+    addLog: async () => {},
+    buildVerificationPollPayloadForNode: (nodeId, state, overrides) => ({
+      flowId: state.activeFlowId,
+      nodeId,
+      step: 4,
+      targetEmail: 'user@example.com',
+      maxAttempts: 2,
+      intervalMs: 100,
+      ...overrides,
+    }),
+    getMailConfig: () => ({ provider: '2925-imap', label: '2925 IMAP' }),
+    MAIL_2925_IMAP_PROVIDER: '2925-imap',
+    pollMail2925ImapVerificationCode: async (step, state, payload) => {
+      imapCall = { step, state, payload };
+      return { code: '654321', emailTimestamp: 789 };
+    },
+    reuseOrCreateTab: async () => {
+      openedBrowserMail = true;
+    },
+    sendToMailContentScriptResilient: async () => {
+      throw new Error('2925-imap should not use browser mailbox content script');
+    },
+  });
+
+  const result = await service.pollFlowVerificationCode({
+    flowId: 'kiro',
+    nodeId: 'kiro-submit-verification-code',
+    state: { activeFlowId: 'kiro', email: 'user@example.com' },
+    step: 4,
+    filterAfterTimestamp: 123,
+  });
+
+  assert.equal(result.code, '654321');
+  assert.equal(imapCall.step, 4);
+  assert.equal(imapCall.payload.filterAfterTimestamp, 123);
+  assert.equal(openedBrowserMail, false);
+});
+
 test('flow mail polling service prepares browser mail provider sessions and payload timeouts', async () => {
   const api = loadFlowMailPollingApi();
   let ensured2925 = null;

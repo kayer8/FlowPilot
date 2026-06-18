@@ -3,6 +3,7 @@
 })(typeof self !== 'undefined' ? self : globalThis, function createManagedAliasUtilsModule() {
   const GMAIL_PROVIDER = 'gmail';
   const MAIL_2925_PROVIDER = '2925';
+  const MAIL_2925_IMAP_PROVIDER = '2925-imap';
   const MAIL_2925_MODE_PROVIDE = 'provide';
   const MAIL_2925_MODE_RECEIVE = 'receive';
   const DEFAULT_MAIL_2925_MODE = MAIL_2925_MODE_PROVIDE;
@@ -64,7 +65,11 @@
   };
 
   function getManagedAliasProviderConfig(provider = '') {
-    return PROVIDER_CONFIGS[String(provider || '').trim().toLowerCase()] || null;
+    const normalizedProvider = String(provider || '').trim().toLowerCase();
+    if (normalizedProvider === MAIL_2925_IMAP_PROVIDER) {
+      return PROVIDER_CONFIGS[MAIL_2925_PROVIDER] || null;
+    }
+    return PROVIDER_CONFIGS[normalizedProvider] || null;
   }
 
   function normalizeMail2925Mode(value = '') {
@@ -82,7 +87,7 @@
     if (!isManagedAliasProvider(normalizedProvider)) {
       return false;
     }
-    if (normalizedProvider !== MAIL_2925_PROVIDER) {
+    if (normalizedProvider !== MAIL_2925_PROVIDER && normalizedProvider !== MAIL_2925_IMAP_PROVIDER) {
       return true;
     }
 
@@ -167,6 +172,7 @@
     isManagedAliasProvider,
     MAIL_2925_MODE_PROVIDE,
     MAIL_2925_MODE_RECEIVE,
+    MAIL_2925_IMAP_PROVIDER,
     normalizeMail2925Mode,
     parseEmailParts,
     parseManagedAliasBaseEmail,

@@ -73,12 +73,14 @@ function createVerificationFlowTestHelpers(overrides = {}) {
     HOTMAIL_PROVIDER: 'hotmail-api',
     isStopError: () => false,
     LUCKMAIL_PROVIDER: 'luckmail-api',
+    MAIL_2925_IMAP_PROVIDER: '2925-imap',
     MAIL_2925_VERIFICATION_INTERVAL_MS: 15000,
     MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 15,
     pollCloudflareTempEmailVerificationCode: async () => ({}),
     pollCloudMailVerificationCode: async () => ({}),
     pollHotmailVerificationCode: async () => ({}),
     pollLuckmailVerificationCode: async () => ({}),
+    pollMail2925ImapVerificationCode: async () => ({}),
     sendToContentScript: async () => ({}),
     sendToMailContentScriptResilient: async () => ({}),
     setState: async () => {},
@@ -142,11 +144,13 @@ test('verification flow keeps 2925 polling cadence in the default payload', () =
     HOTMAIL_PROVIDER: 'hotmail-api',
     isStopError: () => false,
     LUCKMAIL_PROVIDER: 'luckmail-api',
+    MAIL_2925_IMAP_PROVIDER: '2925-imap',
     MAIL_2925_VERIFICATION_INTERVAL_MS: 15000,
     MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 15,
     pollCloudflareTempEmailVerificationCode: async () => ({}),
     pollHotmailVerificationCode: async () => ({}),
     pollLuckmailVerificationCode: async () => ({}),
+    pollMail2925ImapVerificationCode: async () => ({}),
     sendToContentScript: async () => ({}),
     sendToMailContentScriptResilient: async () => ({}),
     setState: async () => {},
@@ -158,11 +162,49 @@ test('verification flow keeps 2925 polling cadence in the default payload', () =
 
   const step4Payload = helpers.getVerificationPollPayload(4, { email: 'user@example.com', mailProvider: '2925' });
   const step8Payload = helpers.getVerificationPollPayload(8, { email: 'user@example.com', mailProvider: '2925' });
+  const imapPayload = helpers.getVerificationPollPayload(4, { email: 'user@example.com', mailProvider: '2925-imap' });
 
   assert.equal(step4Payload.maxAttempts, 15);
   assert.equal(step4Payload.intervalMs, 15000);
   assert.equal(step8Payload.maxAttempts, 15);
   assert.equal(step8Payload.intervalMs, 15000);
+  assert.equal(imapPayload.filterAfterTimestamp, 0);
+  assert.equal(imapPayload.maxAttempts, 15);
+  assert.equal(imapPayload.intervalMs, 15000);
+});
+
+test('verification flow polls 2925 imap directly without mailbox content script', async () => {
+  let imapCall = null;
+  const helpers = createVerificationFlowTestHelpers({
+    pollMail2925ImapVerificationCode: async (step, state, payload) => {
+      imapCall = { step, state, payload };
+      return { code: '654321', emailTimestamp: 123 };
+    },
+    sendToMailContentScriptResilient: async () => {
+      throw new Error('2925-imap should not use mailbox content script');
+    },
+  });
+
+  const result = await helpers.pollFreshVerificationCode(
+    4,
+    {
+      email: 'user@example.com',
+      mailProvider: '2925-imap',
+      mail2925Mode: 'receive',
+      lastSignupCode: null,
+    },
+    { provider: '2925-imap', label: '2925 IMAP' },
+    {
+      filterAfterTimestamp: 123456,
+      maxAttempts: 1,
+      intervalMs: 1,
+    }
+  );
+
+  assert.equal(result.code, '654321');
+  assert.equal(imapCall.step, 4);
+  assert.equal(imapCall.payload.filterAfterTimestamp, 123456);
+  assert.equal(imapCall.payload.mail2925MatchTargetEmail, true);
 });
 
 test('verification flow keeps iCloud step 4 polling at least five attempts under a short remaining budget', async () => {
@@ -1359,10 +1401,12 @@ test('verification flow gives up after five rejected 2925 login codes', async ()
 test('step 8 executor applies 2925 invalid-code retry settings to all login-code entry points', () => {
   const step8Source = fs.readFileSync('flows/openai/background/steps/fetch-login-code.js', 'utf8');
 
-  assert.match(step8Source, /maxSubmitAttempts:\s*mail\.provider === '2925' \? 5 : undefined/);
-  assert.match(step8Source, /invalidCodeResendDelayMs:\s*mail\.provider === '2925' \? 5000 : undefined/);
-  assert.match(step8Source, /treatUnknownSubmitTransportAsInvalidCode:\s*mail\.provider === '2925' \? true : undefined/);
-  assert.match(step8Source, /treatResendTransportErrorAsRequested:\s*mail\.provider === '2925' \? true : undefined/);
+  assert.match(step8Source, /MAIL_2925_IMAP_PROVIDER = '2925-imap'/);
+  assert.match(step8Source, /function isMail2925LikeProvider\(provider\)/);
+  assert.match(step8Source, /maxSubmitAttempts:\s*isMail2925LikeProvider\(mail\.provider\) \? 5 : undefined/);
+  assert.match(step8Source, /invalidCodeResendDelayMs:\s*isMail2925LikeProvider\(mail\.provider\) \? 5000 : undefined/);
+  assert.match(step8Source, /treatUnknownSubmitTransportAsInvalidCode:\s*isMail2925LikeProvider\(mail\.provider\) \? true : undefined/);
+  assert.match(step8Source, /treatResendTransportErrorAsRequested:\s*isMail2925LikeProvider\(mail\.provider\) \? true : undefined/);
   assert.equal((step8Source.match(/return pollEmailVerificationCode\(/g) || []).length, 3);
 });
 

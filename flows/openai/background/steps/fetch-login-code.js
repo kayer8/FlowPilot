@@ -23,6 +23,7 @@
       isTabAlive,
       isVerificationMailPollingError,
       LUCKMAIL_PROVIDER,
+      MAIL_2925_IMAP_PROVIDER = '2925-imap',
       reopenMail2925MailboxSession = null,
       resolveSignupEmailForFlow,
       resolveVerificationStep,
@@ -135,6 +136,10 @@
 
     function normalizeStep8VerificationTargetEmail(value) {
       return String(value || '').trim().toLowerCase();
+    }
+
+    function isMail2925LikeProvider(provider) {
+      return provider === '2925' || provider === MAIL_2925_IMAP_PROVIDER;
     }
 
     function resolveBoundEmailLoginTarget(state = {}, visibleStep = 0) {
@@ -434,7 +439,7 @@
       if (mail?.provider === LUCKMAIL_PROVIDER) {
         return 15000;
       }
-      if (mail?.provider === HOTMAIL_PROVIDER || mail?.provider === '2925') {
+      if (mail?.provider === HOTMAIL_PROVIDER || isMail2925LikeProvider(mail?.provider)) {
         return 0;
       }
       return Math.max(0, Number(STANDARD_MAIL_VERIFICATION_RESEND_INTERVAL_MS) || 0);
@@ -676,11 +681,11 @@
       const mail = getMailConfig(preparedState);
       if (mail.error) throw new Error(mail.error);
       const stepStartedAt = Date.now();
-      const verificationFilterAfterTimestamp = mail.provider === '2925'
+      const verificationFilterAfterTimestamp = isMail2925LikeProvider(mail.provider)
         ? Math.max(0, stepStartedAt - MAIL_2925_FILTER_LOOKBACK_MS)
         : stepStartedAt;
       const verificationSessionKey = `${visibleStep}:${stepStartedAt}`;
-      const shouldCompareVerificationEmail = mail.provider !== '2925';
+      const shouldCompareVerificationEmail = !isMail2925LikeProvider(mail.provider);
       const displayedVerificationEmail = shouldCompareVerificationEmail
         ? normalizeStep8VerificationTargetEmail(pageState?.displayedEmail)
         : '';
@@ -718,6 +723,7 @@
       if (
         mail.provider === HOTMAIL_PROVIDER
         || mail.provider === LUCKMAIL_PROVIDER
+        || mail.provider === MAIL_2925_IMAP_PROVIDER
         || mail.provider === CLOUDFLARE_TEMP_EMAIL_PROVIDER
         || mail.provider === CLOUD_MAIL_PROVIDER
       ) {
@@ -747,7 +753,7 @@
         completionStep: visibleStep,
         filterAfterTimestamp: verificationFilterAfterTimestamp,
         sessionKey: verificationSessionKey,
-        disableTimeBudgetCap: mail.provider === '2925',
+        disableTimeBudgetCap: isMail2925LikeProvider(mail.provider),
         getRemainingTimeMs: getStep8RemainingTimeResolver(preparedState?.oauthUrl || '', visibleStep),
         requestFreshCodeFirst: false,
         lastResendAt: latestResendAt,
@@ -761,16 +767,16 @@
           }
         },
         targetEmail: fixedTargetEmail,
-        maxResendRequests: mail.provider === '2925' ? 2 : undefined,
-        maxSubmitAttempts: mail.provider === '2925' ? 5 : undefined,
-        invalidCodeResendDelayMs: mail.provider === '2925' ? 5000 : undefined,
-        treatUnknownSubmitTransportAsInvalidCode: mail.provider === '2925' ? true : undefined,
-        treatResendTransportErrorAsRequested: mail.provider === '2925' ? true : undefined,
-        initialPollMaxAttempts: mail.provider === '2925' ? 5 : undefined,
-        pollAttemptPlan: mail.provider === '2925' ? [2, 3, 15] : undefined,
+        maxResendRequests: isMail2925LikeProvider(mail.provider) ? 2 : undefined,
+        maxSubmitAttempts: isMail2925LikeProvider(mail.provider) ? 5 : undefined,
+        invalidCodeResendDelayMs: isMail2925LikeProvider(mail.provider) ? 5000 : undefined,
+        treatUnknownSubmitTransportAsInvalidCode: isMail2925LikeProvider(mail.provider) ? true : undefined,
+        treatResendTransportErrorAsRequested: isMail2925LikeProvider(mail.provider) ? true : undefined,
+        initialPollMaxAttempts: isMail2925LikeProvider(mail.provider) ? 5 : undefined,
+        pollAttemptPlan: isMail2925LikeProvider(mail.provider) ? [2, 3, 15] : undefined,
         resendIntervalMs: mail.provider === LUCKMAIL_PROVIDER
           ? 15000
-          : ((mail.provider === HOTMAIL_PROVIDER || mail.provider === '2925')
+          : ((mail.provider === HOTMAIL_PROVIDER || isMail2925LikeProvider(mail.provider))
             ? 0
             : STANDARD_MAIL_VERIFICATION_RESEND_INTERVAL_MS),
       });
