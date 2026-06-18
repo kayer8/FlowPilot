@@ -1200,6 +1200,10 @@ function isMailboxLoading() {
   return false;
 }
 
+function isMailboxEmptyStateVisible() {
+  return true;
+}
+
 function findSelectAllControl() {
   calls.push('unexpected-select-all');
   return null;
@@ -1228,8 +1232,58 @@ return {
 
   const result = await api.deleteAllMailboxEmails(9);
 
-  assert.deepEqual(result, { deleted: false, empty: true, alreadyEmpty: true });
+  assert.deepEqual(result, { deleted: false, empty: true, alreadyEmpty: true, noMessages: true });
   assert.deepEqual(api.getCalls(), ['inbox']);
+});
+
+test('deleteAllMailboxEmails treats missing delete controls on visible empty inbox as cleared', async () => {
+  const bundle = extractFunction('deleteAllMailboxEmails');
+
+  const api = new Function(`
+const calls = [];
+
+async function returnToInbox() {
+  calls.push('inbox');
+  return true;
+}
+
+async function waitForMailboxReady() {
+  return { ready: true, items: [{ id: 'stale-row' }], empty: false };
+}
+
+function findMailItems() {
+  return [];
+}
+
+function findSelectAllControl() {
+  calls.push('select-all-check');
+  return null;
+}
+
+function isMailboxEmptyStateVisible() {
+  return true;
+}
+
+async function sleep() {}
+async function sleepRandom() {}
+
+const console = { warn() {} };
+const MAIL2925_PREFIX = '[MultiPage:mail-2925]';
+
+${bundle}
+
+return {
+  deleteAllMailboxEmails,
+  getCalls() {
+    return calls.slice();
+  },
+};
+`)();
+
+  const result = await api.deleteAllMailboxEmails(9);
+
+  assert.deepEqual(result, { deleted: false, empty: true, alreadyEmpty: true, noMessages: true });
+  assert.deepEqual(api.getCalls(), ['inbox', 'select-all-check']);
 });
 
 test('findAgreementCheckbox skips 30-day login checkbox and picks agreement checkbox', async () => {

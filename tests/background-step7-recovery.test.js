@@ -732,7 +732,7 @@ test('bind-email continues when 2925 inbox is already empty before cleanup', asy
     },
     sendToMailContentScriptResilient: async () => {
       events.push(['cleanup-empty']);
-      return { ok: true, deleted: false, empty: true };
+      return { ok: true, deleted: false, noMessages: true };
     },
     setState: async (payload) => {
       runtimeState = {

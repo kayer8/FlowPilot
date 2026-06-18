@@ -186,6 +186,15 @@ const MAIL_LOADING_SELECTORS = [
   '[class*="spinner"]',
   '[class*="Spin"]',
 ];
+const MAIL_EMPTY_STATE_SELECTORS = [
+  '.el-table__empty-block',
+  '.el-table__empty-text',
+  '.ivu-table-tip',
+  '[class*="empty"]',
+  '[class*="Empty"]',
+  '[class*="no-data"]',
+  '[class*="NoData"]',
+];
 const MAIL_ACTION_CANDIDATE_SELECTORS = 'button, [role="button"], a, label, span, div';
 const MAIL2925_LIMIT_ERROR_PREFIX = 'MAIL2925_LIMIT_REACHED::';
 const MAIL2925_LOGIN_INPUT_SELECTORS = [
@@ -315,6 +324,24 @@ function isMailboxLoading() {
 
   const pageText = getPageTextSample(2000);
   return /\u52a0\u8f7d\u4e2d|\u6b63\u5728\u52a0\u8f7d|loading/i.test(pageText);
+}
+
+function isMailboxEmptyStateVisible() {
+  for (const selector of MAIL_EMPTY_STATE_SELECTORS) {
+    const candidates = document.querySelectorAll(selector);
+    for (const candidate of candidates) {
+      if (!isVisibleNode(candidate)) {
+        continue;
+      }
+      const text = normalizeNodeText(candidate.innerText || candidate.textContent || '');
+      if (!text || /暂无|无数据|没有|空|empty|no\s+(?:data|mail|message|emails?)/i.test(text)) {
+        return true;
+      }
+    }
+  }
+
+  const pageText = getPageTextSample(3000);
+  return /暂无(?:数据|邮件|消息)|没有(?:邮件|消息)|收件箱(?:是)?空|邮箱(?:是)?空|no\s+(?:mail|messages?|emails?)/i.test(pageText);
 }
 
 function isMailListDomReady() {
@@ -1427,20 +1454,28 @@ async function deleteAllMailboxEmails(step) {
     const mailbox = await waitForMailboxReady(45000);
     if (!mailbox.ready) {
       const emptyInboxVisible = findMailItems().length === 0
-        && (mailbox.empty === true || isMailListDomReady() || isLikelyMail2925MailboxPage())
+        && (
+          mailbox.empty === true
+          || isMailboxEmptyStateVisible()
+          || isMailListDomReady()
+          || isLikelyMail2925MailboxPage()
+        )
         && !isMailboxLoading();
       return emptyInboxVisible
-        ? { deleted: false, empty: true, alreadyEmpty: true }
+        ? { deleted: false, empty: true, alreadyEmpty: true, noMessages: true }
         : { deleted: false, empty: false };
     }
 
     const initialItems = mailbox.items;
     if (initialItems.length === 0) {
-      return { deleted: false, empty: true, alreadyEmpty: true };
+      return { deleted: false, empty: true, alreadyEmpty: true, noMessages: true };
     }
 
     const selectAllControl = findSelectAllControl();
     if (!selectAllControl) {
+      if (findMailItems().length === 0 && (mailbox.empty === true || isMailboxEmptyStateVisible())) {
+        return { deleted: false, empty: true, alreadyEmpty: true, noMessages: true };
+      }
       return { deleted: false, empty: false };
     }
 
@@ -1451,6 +1486,9 @@ async function deleteAllMailboxEmails(step) {
 
     const deleteButton = findDeleteButton();
     if (!deleteButton) {
+      if (findMailItems().length === 0 && (mailbox.empty === true || isMailboxEmptyStateVisible())) {
+        return { deleted: false, empty: true, alreadyEmpty: true, noMessages: true };
+      }
       return { deleted: false, empty: false };
     }
 

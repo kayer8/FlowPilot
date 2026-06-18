@@ -592,7 +592,11 @@
       if (result?.error) {
         throw new Error(result.error);
       }
-      const inboxAlreadyEmpty = result?.empty === true || result?.alreadyEmpty === true;
+      const inboxAlreadyEmpty = result?.empty === true
+        || result?.alreadyEmpty === true
+        || result?.noMessages === true
+        || result?.noMail === true
+        || result?.messageCount === 0;
       if (result?.deleted === false && !inboxAlreadyEmpty) {
         throw new Error(`步骤 ${visibleStep}：绑定邮箱前未能确认 2925 收件箱已清空。`);
       }
