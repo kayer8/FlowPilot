@@ -9454,12 +9454,12 @@ function isRestartCurrentAttemptError(error) {
     return loggingStatus.isRestartCurrentAttemptError(error);
   }
   const message = String(typeof error === 'string' ? error : error?.message || '');
-  return /当前邮箱已存在，需要重新开始新一轮|SIGNUP_PHONE_PASSWORD_MISMATCH::/i.test(message);
+  return /当前邮箱已存在，需要重新开始新一轮|SIGNUP_PHONE_PASSWORD_MISMATCH::|SIGNUP_PASSWORD_PAGE_LOGIN_MODE::/i.test(message);
 }
 
 function isSignupPhonePasswordMismatchFailure(error) {
   const message = getErrorMessage(error);
-  return /SIGNUP_PHONE_PASSWORD_MISMATCH::/i.test(message);
+  return /SIGNUP_PHONE_PASSWORD_MISMATCH::|SIGNUP_PASSWORD_PAGE_LOGIN_MODE::/i.test(message);
 }
 
 function getSignupPhonePasswordMismatchRestartPayload(preservedState = {}) {
@@ -9514,7 +9514,9 @@ async function restartSignupPhonePasswordMismatchAttemptFromNode(nodeId, restart
   const emailSuffix = preservedEmail ? `当前邮箱：${preservedEmail}；` : '';
   const phoneSuffix = activeSignupPhoneNumber ? `当前手机号：${activeSignupPhoneNumber}；` : '';
   const errorMessage = getErrorMessage(error);
-  const reasonLabel = /PHONE_RESEND_BANNED_NUMBER::|无法向此(?:电话|手机)号码发送短信|无法发送短信到此(?:电话|手机)号码|unable\s+to\s+send\s+(?:an?\s+)?(?:sms|text(?:\s+message)?)\s+to\s+(?:this|that)\s+(?:phone\s+)?number/i
+  const reasonLabel = /SIGNUP_PASSWORD_PAGE_LOGIN_MODE::/i.test(errorMessage)
+    ? '进入登录密码页'
+    : (/PHONE_RESEND_BANNED_NUMBER::|无法向此(?:电话|手机)号码发送短信|无法发送短信到此(?:电话|手机)号码|unable\s+to\s+send\s+(?:an?\s+)?(?:sms|text(?:\s+message)?)\s+to\s+(?:this|that)\s+(?:phone\s+)?number/i
     .test(errorMessage)
     ? '当前注册手机号无法接收短信'
     : (/PHONE_RESEND_SERVER_ERROR::|该网页无法正常运作|this\s+page\s+isn['’]?t\s+working|http\s+error\s+500|500\s+internal\s+server\s+error/i
@@ -9523,7 +9525,7 @@ async function restartSignupPhonePasswordMismatchAttemptFromNode(nodeId, restart
       : (/与此(?:电话|手机)号码相关联的帐户已存在|account\s+associated\s+with\s+this\s+phone\s+number\s+already\s+exists/i
         .test(errorMessage)
         ? '注册手机号异常'
-        : '手机号/密码不匹配'));
+        : '手机号/密码不匹配')));
   const normalizedNodeId = String(nodeId || '').trim() || 'fetch-signup-code';
   await addLog(
     `节点 ${normalizedNodeId}：检测到${reasonLabel}，准备丢弃当前注册手机号并回到节点 open-chatgpt 重新开始（第 ${restartCount} 次重开）。${phoneSuffix}${emailSuffix}原因：${errorMessage}`,
@@ -13797,6 +13799,7 @@ const step3Executor = self.MultiPageBackgroundStep3?.createStep3Executor({
   isTabAlive,
   resolveSignupMethod,
   sendToContentScript,
+  sendToContentScriptResilient,
   setPasswordState,
   setState,
   OPENAI_AUTH_INJECT_FILES,

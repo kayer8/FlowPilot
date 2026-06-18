@@ -6,6 +6,15 @@ const source = fs.readFileSync('flows/openai/background/steps/fill-password.js',
 const globalScope = {};
 const api = new Function('self', `${source}; return self.MultiPageBackgroundStep3;`)(globalScope);
 
+async function createPasswordPageState() {
+  return {
+    state: 'password_page',
+    passwordPageTitle: '创建密码',
+    hasPasswordInput: true,
+    url: 'https://auth.openai.com/create-account/password',
+  };
+}
+
 test('step 3 reuses existing generated password when rerunning the same email flow', async () => {
   const events = {
     passwordStates: [],
@@ -22,6 +31,7 @@ test('step 3 reuses existing generated password when rerunning the same email fl
     sendToContentScript: async (_source, message) => {
       events.messages.push(message);
     },
+    sendToContentScriptResilient: createPasswordPageState,
     setPasswordState: async (password) => {
       events.passwordStates.push(password);
     },
@@ -54,6 +64,56 @@ test('step 3 reuses existing generated password when rerunning the same email fl
   ]);
 });
 
+test('step 3 restarts before saving password when password page is login mode', async () => {
+  const events = {
+    generatedPasswords: [],
+    passwordStates: [],
+    messages: [],
+    stateUpdates: [],
+  };
+
+  const executor = api.createStep3Executor({
+    addLog: async () => {},
+    chrome: { tabs: { update: async () => {} } },
+    ensureContentScriptReadyOnTab: async () => {},
+    generatePassword: () => {
+      events.generatedPasswords.push('Generated123!');
+      return 'Generated123!';
+    },
+    getTabId: async () => 88,
+    isTabAlive: async () => true,
+    sendToContentScript: async (_source, message) => {
+      events.messages.push(message);
+    },
+    sendToContentScriptResilient: async () => ({
+      state: 'password_page',
+      passwordPageTitle: '输入密码',
+      hasPasswordInput: true,
+      url: 'https://auth.openai.com/log-in/password',
+    }),
+    setPasswordState: async (password) => {
+      events.passwordStates.push(password);
+    },
+    setState: async (updates) => {
+      events.stateUpdates.push(updates);
+    },
+    OPENAI_AUTH_INJECT_FILES: [],
+  });
+
+  await assert.rejects(
+    () => executor.executeStep3({
+      email: 'login-mode@example.com',
+      accounts: [],
+    }),
+    /SIGNUP_PASSWORD_PAGE_LOGIN_MODE::/
+  );
+
+  assert.deepStrictEqual(events.generatedPasswords, []);
+  assert.deepStrictEqual(events.passwordStates, []);
+  assert.deepStrictEqual(events.stateUpdates, []);
+  assert.deepStrictEqual(events.messages, []);
+});
+
 test('step 3 supports phone-only signup identity when password page is present', async () => {
   const events = {
     passwordStates: [],
@@ -74,6 +134,7 @@ test('step 3 supports phone-only signup identity when password page is present',
     sendToContentScript: async (_source, message) => {
       events.messages.push(message);
     },
+    sendToContentScriptResilient: createPasswordPageState,
     setPasswordState: async (password) => {
       events.passwordStates.push(password);
     },
@@ -143,6 +204,7 @@ test('step 3 phone signup intent does not fall back to a stale email identity', 
     sendToContentScript: async (_source, message) => {
       events.messages.push(message);
     },
+    sendToContentScriptResilient: createPasswordPageState,
     setPasswordState: async (password) => {
       events.passwordStates.push(password);
     },
@@ -186,6 +248,7 @@ test('step 3 respects resolved email fallback when phone signup is unavailable',
     sendToContentScript: async (_source, message) => {
       events.messages.push(message);
     },
+    sendToContentScriptResilient: createPasswordPageState,
     setPasswordState: async () => {},
     setState: async () => {},
     OPENAI_AUTH_INJECT_FILES: [],

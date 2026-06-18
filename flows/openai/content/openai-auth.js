@@ -40,6 +40,7 @@ if (document.documentElement.getAttribute(OPENAI_AUTH_LISTENER_SENTINEL) !== '1'
       || message.type === 'ENSURE_SIGNUP_ENTRY_READY'
       || message.type === 'ENSURE_SIGNUP_PHONE_ENTRY_READY'
       || message.type === 'ENSURE_SIGNUP_PASSWORD_PAGE_READY'
+      || message.type === 'GET_SIGNUP_PASSWORD_PAGE_STATE'
     ) {
       resetStopState();
       handleCommand(message).then((result) => {
@@ -165,6 +166,8 @@ async function handleCommand(message) {
       return await ensureSignupPhoneEntryReady();
     case 'ENSURE_SIGNUP_PASSWORD_PAGE_READY':
       return await ensureSignupPasswordPageReady();
+    case 'GET_SIGNUP_PASSWORD_PAGE_STATE':
+      return getSignupPasswordPageState();
     case 'STEP8_FIND_AND_CLICK':
       return await step8_findAndClick(message.payload);
     case 'STEP8_GET_STATE':
@@ -764,6 +767,7 @@ function inspectSignupEntryState() {
       state: 'password_page',
       passwordInput,
       submitButton: getSignupPasswordSubmitButton({ allowDisabled: true }),
+      passwordPageTitle: getSignupPasswordPageTitle(),
       displayedEmail: getSignupPasswordDisplayedEmail(),
       passwordErrorText: getSignupPasswordFieldErrorText(),
       url: location.href,
@@ -803,6 +807,45 @@ function inspectSignupEntryState() {
   return {
     state: 'unknown',
     url: location.href,
+  };
+}
+
+function getSignupPasswordPageTitle() {
+  const selectors = [
+    'h1',
+    'h2',
+    '[role="heading"]',
+    '[data-testid*="title" i]',
+    '[data-testid*="heading" i]',
+  ];
+  const heading = selectors
+    .flatMap((selector) => Array.from(document.querySelectorAll(selector)))
+    .find((el) => isVisibleElement(el) && normalizeInlineText(el.textContent));
+  if (heading) {
+    return normalizeInlineText(heading.textContent);
+  }
+
+  const passwordInput = getSignupPasswordInput();
+  const wrapper = passwordInput?.closest('form, main, section, [data-rac], div') || document.body;
+  const text = normalizeInlineText(wrapper?.textContent || '');
+  if (/输入密码|enter\s+(?:your\s+)?password|log\s*in|sign\s*in/i.test(text)) {
+    return '输入密码';
+  }
+  if (/创建密码|create\s+(?:your\s+)?password/i.test(text)) {
+    return '创建密码';
+  }
+  return '';
+}
+
+function getSignupPasswordPageState() {
+  const snapshot = inspectSignupEntryState();
+  return {
+    state: snapshot?.state || 'unknown',
+    passwordPageTitle: snapshot?.passwordPageTitle || (snapshot?.state === 'password_page' ? getSignupPasswordPageTitle() : ''),
+    displayedEmail: snapshot?.displayedEmail || '',
+    passwordErrorText: snapshot?.passwordErrorText || '',
+    hasPasswordInput: Boolean(snapshot?.passwordInput || getSignupPasswordInput()),
+    url: snapshot?.url || location.href,
   };
 }
 
