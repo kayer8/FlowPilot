@@ -208,6 +208,7 @@
       const latestState = typeof getState === 'function' ? await getState() : state;
       const resolvedEmail = await resolveSignupEmailForFlow(latestState, {
         preserveAccountIdentity: true,
+        deferPersist: activeFetchLoginCodeStepKey === 'bind-email',
       });
       await addLog(`步骤 ${visibleStep}：检测到添加邮箱页，正在添加邮箱 ${resolvedEmail} 并进入邮箱验证码页...`);
 
@@ -243,6 +244,19 @@
       }
 
       const displayedEmail = normalizeStep8VerificationTargetEmail(result?.displayedEmail || resolvedEmail);
+      const resultPageState = result?.directOAuthConsentPage ? 'oauth_consent_page' : 'verification_page';
+      const resultPage = {
+        state: resultPageState,
+        displayedEmail,
+        url: result?.url || pageState?.url || '',
+      };
+      if (resultPageState !== 'verification_page') {
+        return {
+          state: latestState,
+          pageState: resultPage,
+        };
+      }
+
       let persistedState = latestState;
       if (typeof persistRegistrationEmailState === 'function') {
         await persistRegistrationEmailState(latestState, resolvedEmail, {
@@ -268,11 +282,7 @@
           email: resolvedEmail,
           step8VerificationTargetEmail: displayedEmail,
         },
-        pageState: {
-          state: result?.directOAuthConsentPage ? 'oauth_consent_page' : 'verification_page',
-          displayedEmail,
-          url: result?.url || pageState?.url || '',
-        },
+        pageState: resultPage,
       };
     }
 

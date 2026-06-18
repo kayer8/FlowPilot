@@ -374,7 +374,7 @@
         throw new Error('缺少邮箱地址，请先在侧边栏粘贴邮箱。');
       }
 
-      if (!generatedEmailAlreadyPersisted || options?.preserveAccountIdentity) {
+      if (!options?.deferPersist && (!generatedEmailAlreadyPersisted || options?.preserveAccountIdentity)) {
         await persistResolvedSignupEmail(resolvedEmail, state, {
           ...options,
           generatedEmailAlreadyPersisted,

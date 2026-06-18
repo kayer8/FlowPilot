@@ -547,6 +547,7 @@ test('bind-email submits add-email and requires an email verification page', asy
     },
     resolveSignupEmailForFlow: async (_state, options = {}) => {
       assert.equal(options.preserveAccountIdentity, true);
+      assert.equal(options.deferPersist, true);
       return 'bind.user@example.com';
     },
     reuseOrCreateTab: async () => 1,
@@ -582,6 +583,7 @@ test('bind-email submits add-email and requires an email verification page', asy
   assert.equal(calls.contentMessages.length, 1);
   assert.equal(calls.persistCalls.length, 1);
   assert.equal(calls.persistCalls[0].options.source, 'bind_email');
+  assert.equal(calls.persistCalls[0].options.preserveAccountIdentity, true);
   assert.deepStrictEqual(calls.completions, [
     {
       step: 'bind-email',
@@ -629,6 +631,17 @@ test('bind-email skips on OAuth consent and rejects direct OAuth after submit', 
     },
   ]);
 
+  let runtimeState = {
+    email: '',
+    oauthUrl: 'https://oauth.example/latest',
+    accountIdentifierType: 'phone',
+    accountIdentifier: '+447780579093',
+    signupPhoneNumber: '+447780579093',
+  };
+  const directOauthCalls = {
+    persistCalls: [],
+    completions: [],
+  };
   const directOauthExecutor = api.createStep8Executor({
     addLog: async () => {},
     chrome: {
@@ -636,10 +649,24 @@ test('bind-email skips on OAuth consent and rejects direct OAuth after submit', 
         update: async () => {},
       },
     },
+    completeNodeFromBackground: async (step, payload) => {
+      directOauthCalls.completions.push({ step, payload });
+    },
     getOAuthFlowStepTimeoutMs: async (defaultTimeoutMs) => defaultTimeoutMs,
-    getState: async () => ({ email: '', oauthUrl: 'https://oauth.example/latest' }),
+    getState: async () => ({ ...runtimeState }),
     getTabId: async () => 1,
-    resolveSignupEmailForFlow: async () => 'bind.user@example.com',
+    persistRegistrationEmailState: async (state, email, options) => {
+      directOauthCalls.persistCalls.push({ state, email, options });
+      runtimeState = {
+        ...runtimeState,
+        email,
+      };
+    },
+    resolveSignupEmailForFlow: async (_state, options = {}) => {
+      assert.equal(options.preserveAccountIdentity, true);
+      assert.equal(options.deferPersist, true);
+      return 'bind.user@example.com';
+    },
     reuseOrCreateTab: async () => 1,
     sendToContentScriptResilient: async (_source, message) => {
       if (message.type === 'GET_LOGIN_AUTH_STATE') {
@@ -651,7 +678,12 @@ test('bind-email skips on OAuth consent and rejects direct OAuth after submit', 
         url: 'https://auth.openai.com/authorize',
       };
     },
-    setState: async () => {},
+    setState: async (payload) => {
+      runtimeState = {
+        ...runtimeState,
+        ...payload,
+      };
+    },
     throwIfStopped: () => {},
   });
 
@@ -662,6 +694,88 @@ test('bind-email skips on OAuth consent and rejects direct OAuth after submit', 
     }),
     /绑定邮箱提交后必须进入邮箱验证码页/
   );
+  assert.deepStrictEqual(directOauthCalls.persistCalls, []);
+  assert.deepStrictEqual(directOauthCalls.completions, []);
+  assert.deepStrictEqual(runtimeState, {
+    email: '',
+    oauthUrl: 'https://oauth.example/latest',
+    accountIdentifierType: 'phone',
+    accountIdentifier: '+447780579093',
+    signupPhoneNumber: '+447780579093',
+  });
+});
+
+test('bind-email submit error does not persist an unbound email over phone identity', async () => {
+  let runtimeState = {
+    email: '',
+    oauthUrl: 'https://oauth.example/latest',
+    accountIdentifierType: 'phone',
+    accountIdentifier: '+447780579093',
+    signupPhoneNumber: '+447780579093',
+  };
+  const calls = {
+    persistCalls: [],
+    completions: [],
+  };
+
+  const executor = api.createStep8Executor({
+    addLog: async () => {},
+    chrome: {
+      tabs: {
+        update: async () => {},
+      },
+    },
+    completeNodeFromBackground: async (step, payload) => {
+      calls.completions.push({ step, payload });
+    },
+    getOAuthFlowStepTimeoutMs: async (defaultTimeoutMs) => defaultTimeoutMs,
+    getState: async () => ({ ...runtimeState }),
+    getTabId: async () => 1,
+    persistRegistrationEmailState: async (state, email, options) => {
+      calls.persistCalls.push({ state, email, options });
+      runtimeState = {
+        ...runtimeState,
+        email,
+      };
+    },
+    resolveSignupEmailForFlow: async (_state, options = {}) => {
+      assert.equal(options.preserveAccountIdentity, true);
+      assert.equal(options.deferPersist, true);
+      return 'bind.user@example.com';
+    },
+    reuseOrCreateTab: async () => 1,
+    sendToContentScriptResilient: async (_source, message) => {
+      if (message.type === 'GET_LOGIN_AUTH_STATE') {
+        return { state: 'add_email_page', url: 'https://auth.openai.com/add-email' };
+      }
+      return { error: 'add email failed' };
+    },
+    setState: async (payload) => {
+      runtimeState = {
+        ...runtimeState,
+        ...payload,
+      };
+    },
+    throwIfStopped: () => {},
+  });
+
+  await assert.rejects(
+    () => executor.executeBindEmail({
+      visibleStep: 9,
+      nodeId: 'bind-email',
+      oauthUrl: 'https://oauth.example/latest',
+    }),
+    /add email failed/
+  );
+  assert.deepStrictEqual(calls.persistCalls, []);
+  assert.deepStrictEqual(calls.completions, []);
+  assert.deepStrictEqual(runtimeState, {
+    email: '',
+    oauthUrl: 'https://oauth.example/latest',
+    accountIdentifierType: 'phone',
+    accountIdentifier: '+447780579093',
+    signupPhoneNumber: '+447780579093',
+  });
 });
 
 test('fetch-bind-email-code polls only after bind-email submitted', async () => {
