@@ -2,6 +2,7 @@ import email
 import html
 import imaplib
 import json
+import os
 import re
 import socket
 import traceback
@@ -13,6 +14,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HOST = "127.0.0.1"
 PORT = 17374
+HELPER_BUILD = "detailed-log-2026-06-19"
 DEFAULT_IMAP_HOST = "imap.2925.com"
 DEFAULT_IMAP_PORT = 993
 REQUEST_TIMEOUT_SECONDS = 45
@@ -380,7 +382,12 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         if self.path.rstrip("/") == "/health":
-            json_response(self, 200, {"ok": True, "service": "mail2925-imap-helper"})
+            json_response(self, 200, {
+                "ok": True,
+                "service": "mail2925-imap-helper",
+                "build": HELPER_BUILD,
+                "script": os.path.abspath(__file__),
+            })
             return
         json_response(self, 404, {"ok": False, "error": "Not found"})
 
@@ -409,6 +416,7 @@ class Handler(BaseHTTPRequestHandler):
 
 def main():
     server = ThreadingHTTPServer((HOST, PORT), Handler)
+    log_info(f"build={HELPER_BUILD} script={os.path.abspath(__file__)}")
     log_info(f"listening on http://{HOST}:{PORT}")
     try:
         server.serve_forever()
