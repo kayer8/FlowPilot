@@ -17,6 +17,7 @@ DEFAULT_IMAP_HOST = "imap.2925.com"
 DEFAULT_IMAP_PORT = 993
 REQUEST_TIMEOUT_SECONDS = 45
 FETCH_LIMIT_DEFAULT = 15
+MESSAGE_LOG_LIMIT = 5
 
 
 def log_info(message):
@@ -72,6 +73,67 @@ def mask_email(email_addr):
     if len(local) <= 2:
         return f"{local[:1]}***@{domain}"
     return f"{local[:2]}***@{domain}"
+
+
+def mask_code(code):
+    value = clean_string(code)
+    if len(value) <= 2:
+        return value
+    return f"{value[:1]}***{value[-1:]}"
+
+
+def compact_log_text(value, limit=160):
+    text = re.sub(r"\s+", " ", str(value or "")).strip()
+    if len(text) <= limit:
+        return text
+    return text[:limit] + "..."
+
+
+def find_code_candidates(message):
+    if not message:
+        return []
+    text = "\n".join(
+        clean_string(message.get(key))
+        for key in ("subject", "bodyPreview", "text")
+        if clean_string(message.get(key))
+    )
+    candidates = re.findall(r"(?<!\d)(\d{6})(?!\d)", text)
+    return list(dict.fromkeys(candidates))
+
+
+def summarize_message_for_log(message, index=0):
+    candidates = find_code_candidates(message)
+    candidate_label = ",".join(mask_code(code) for code in candidates[:3]) if candidates else "none"
+    return (
+        f"#{index} uid={message.get('uid') or message.get('id') or ''} "
+        f"time={message.get('receivedDateTime') or message.get('receivedTimestamp') or 'unknown'} "
+        f"from={compact_log_text(message.get('from'), 60) or 'unknown'} "
+        f"to={compact_log_text(message.get('to'), 80) or '-'} "
+        f"subject={compact_log_text(message.get('subject'), 100) or '(no subject)'} "
+        f"codes={candidate_label} "
+        f"preview={compact_log_text(message.get('bodyPreview'), 140)}"
+    )
+
+
+def log_poll_messages(messages):
+    log_info(f"poll-code fetched messages={len(messages)}")
+    if not messages:
+        log_info("poll-code mailbox returned no messages")
+        return
+    for index, message in enumerate(messages[:MESSAGE_LOG_LIMIT], 1):
+        log_info("poll-code message " + summarize_message_for_log(message, index))
+    all_candidates = []
+    for message in messages:
+        for code in find_code_candidates(message):
+            all_candidates.append(code)
+    unique_candidates = list(dict.fromkeys(all_candidates))
+    if unique_candidates:
+        log_info(
+            "poll-code candidate 6-digit codes="
+            + ",".join(mask_code(code) for code in unique_candidates[:10])
+        )
+    else:
+        log_info("poll-code candidate 6-digit codes=none")
 
 
 class Mail2925ImapError(RuntimeError):
@@ -231,10 +293,16 @@ def connect_imap(payload):
     for username in get_login_usernames(email_addr):
         client = None
         try:
+            log_info(
+                f"connecting host={host} port={port} secure={secure} "
+                f"username={mask_email(username if '@' in username else username + '@local')}"
+            )
             client = create_imap_client(host, port, secure)
             client.login(username, password)
             if username != email_addr:
-                log_info(f"login succeeded with username={username[:2]}***")
+                log_info(f"login succeeded with local-part username={username[:2]}***")
+            else:
+                log_info(f"login succeeded with email username={mask_email(email_addr)}")
             return client
         except imaplib.IMAP4.error as exc:
             login_errors.append(str(exc))
@@ -267,16 +335,24 @@ def list_latest_messages(payload):
         status, _ = client.select(mailbox, readonly=True)
         if status != "OK":
             raise RuntimeError(f"Cannot select mailbox: {mailbox}")
+        log_info(f"selected mailbox={mailbox} readonly=True")
 
         status, data = client.uid("search", None, "ALL")
         if status != "OK":
             raise RuntimeError("IMAP search failed")
         uids = data[0].split() if data and data[0] else []
         selected_uids = list(reversed(uids))[:limit]
+        newest_uid = selected_uids[0].decode("ascii", errors="ignore") if selected_uids else ""
+        oldest_uid = selected_uids[-1].decode("ascii", errors="ignore") if selected_uids else ""
+        log_info(
+            f"uid search total={len(uids)} fetch_limit={limit} selected={len(selected_uids)} "
+            f"newest_uid={newest_uid or '-'} oldest_selected_uid={oldest_uid or '-'}"
+        )
         messages = []
         for uid in selected_uids:
             status, fetched = client.uid("fetch", uid, "(RFC822)")
             if status != "OK":
+                log_info(f"uid fetch skipped uid={uid.decode('ascii', errors='ignore')} status={status}")
                 continue
             raw_message = None
             for item in fetched:
@@ -284,8 +360,10 @@ def list_latest_messages(payload):
                     raw_message = bytes(item[1])
                     break
             if not raw_message:
+                log_info(f"uid fetch empty uid={uid.decode('ascii', errors='ignore')}")
                 continue
             messages.append(normalize_message(uid.decode("ascii", errors="ignore"), raw_message))
+        log_poll_messages(messages)
         return messages
     finally:
         close_selected_client(client)

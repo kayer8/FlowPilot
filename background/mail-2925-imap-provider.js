@@ -397,6 +397,10 @@
           );
           const messages = normalizeHelperMessages(payload);
           const filteredMessages = filterMessagesByTargetEmail(messages, pollPayload);
+          await addLog(
+            `步骤 ${step}：2925 IMAP 助手返回 ${messages.length} 封邮件，目标邮箱筛选后 ${filteredMessages.length} 封（${attempt}/${maxAttempts}）。`,
+            'info'
+          );
           const matchResult = payload?.code
             ? {
               match: {

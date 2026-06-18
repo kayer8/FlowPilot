@@ -25,6 +25,18 @@ class Mail2925ImapHelperTest(unittest.TestCase):
         self.assertEqual(error.code, "IMAP_LOGIN_FAILED")
         self.assertEqual(str(error), "login failed")
 
+    def test_find_code_candidates_reads_subject_preview_and_text(self):
+        message = {
+            "subject": "Your code is 123456",
+            "bodyPreview": "old 123456 should not duplicate, new 654321",
+            "text": "ignore 1234567 and keep 998877",
+        }
+
+        self.assertEqual(
+            helper.find_code_candidates(message),
+            ["123456", "654321", "998877"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
