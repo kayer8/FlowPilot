@@ -122,6 +122,29 @@ function extractFunction(name) {
   return source.slice(start, end);
 }
 
+function buildExtractVerificationCodeBundle() {
+  return [
+    extractFunction('normalizeRulePatternList'),
+    extractFunction('normalizeRegexFlags'),
+    extractFunction('buildGlobalSearchRegex'),
+    extractFunction('getCodeCandidateFromMatch'),
+    extractFunction('findSafeCodeByPattern'),
+    extractFunction('extractCodeByRulePatterns'),
+    extractFunction('extractLegacyStrictVerificationCode'),
+    extractFunction('isLikelyCompactTimeValue'),
+    extractFunction('isLikelyHeaderTimestampCode'),
+    extractFunction('hasVerificationContextNear'),
+    extractFunction('isLikelyPageNoiseCode'),
+    extractFunction('isCandidateInsideLongDigitSequence'),
+    extractFunction('isEmailTokenChar'),
+    extractFunction('isCandidateInsideEmailAddress'),
+    extractFunction('isSafeVerificationCodeCandidate'),
+    extractFunction('findSafeStandaloneSixDigitCode'),
+    extractFunction('extractContextualVerificationCode'),
+    extractFunction('extractVerificationCode'),
+  ].join('\n');
+}
+
 test('handlePollEmail establishes a baseline after opening from detail view and only picks mail from a later refresh', async () => {
   const bundle = [
     extractFunction('normalizeMinuteTimestamp'),
@@ -593,15 +616,7 @@ return {
 });
 
 test('extractVerificationCode strict mode matches the new suspicious log-in mail body', () => {
-  const bundle = [
-    extractFunction('normalizeRulePatternList'),
-    extractFunction('extractCodeByRulePatterns'),
-    extractFunction('extractLegacyStrictVerificationCode'),
-    extractFunction('isLikelyCompactTimeValue'),
-    extractFunction('isLikelyHeaderTimestampCode'),
-    extractFunction('findSafeStandaloneSixDigitCode'),
-    extractFunction('extractVerificationCode'),
-  ].join('\n');
+  const bundle = buildExtractVerificationCodeBundle();
 
   const api = new Function(`
 ${bundle}
@@ -614,15 +629,7 @@ return { extractVerificationCode };
 });
 
 test('extractVerificationCode supports runtime mail rule patterns', () => {
-  const bundle = [
-    extractFunction('normalizeRulePatternList'),
-    extractFunction('extractCodeByRulePatterns'),
-    extractFunction('extractLegacyStrictVerificationCode'),
-    extractFunction('isLikelyCompactTimeValue'),
-    extractFunction('isLikelyHeaderTimestampCode'),
-    extractFunction('findSafeStandaloneSixDigitCode'),
-    extractFunction('extractVerificationCode'),
-  ].join('\n');
+  const bundle = buildExtractVerificationCodeBundle();
 
   const api = new Function(`
 ${bundle}
@@ -639,15 +646,7 @@ return { extractVerificationCode };
 });
 
 test('extractVerificationCode ignores compact header time before fallback code', () => {
-  const bundle = [
-    extractFunction('normalizeRulePatternList'),
-    extractFunction('extractCodeByRulePatterns'),
-    extractFunction('extractLegacyStrictVerificationCode'),
-    extractFunction('isLikelyCompactTimeValue'),
-    extractFunction('isLikelyHeaderTimestampCode'),
-    extractFunction('findSafeStandaloneSixDigitCode'),
-    extractFunction('extractVerificationCode'),
-  ].join('\n');
+  const bundle = buildExtractVerificationCodeBundle();
 
   const api = new Function(`
 ${bundle}
@@ -666,8 +665,85 @@ return { extractVerificationCode };
   assert.equal(api.extractVerificationCode(bodyText, false), '371138');
 });
 
+test('extractVerificationCode ignores 2925 page noise numbers without verification context', () => {
+  const bundle = buildExtractVerificationCodeBundle();
+
+  const api = new Function(`
+${bundle}
+return { extractVerificationCode };
+`)();
+
+  const bodyText = [
+    '2925 mail page',
+    'mail list inbox delete refresh',
+    'time 202167',
+    'return next message',
+  ].join('\n');
+
+  assert.equal(api.extractVerificationCode(bodyText, { requireContext: true }), null);
+});
+
+test('extractVerificationCode still accepts standalone OpenAI codes near verification context', () => {
+  const bundle = buildExtractVerificationCodeBundle();
+
+  const api = new Function(`
+${bundle}
+return { extractVerificationCode };
+`)();
+
+  const bodyText = [
+    'OpenAI',
+    'Use this verification code to continue.',
+    '371138',
+  ].join('\n');
+
+  assert.equal(api.extractVerificationCode(bodyText, { requireContext: true }), '371138');
+});
+
+test('extractVerificationCode ignores OpenAI bounce header code and returns the mail body code', () => {
+  const bundle = buildExtractVerificationCodeBundle();
+
+  const api = new Function(`
+${bundle}
+return { extractVerificationCode };
+`)();
+
+  const bodyText = [
+    '你的 OpenAI 临时验证码',
+    '发件人: noreply <noreply@tm.openai.com> (由 bounces+20216706-7f1f-zhzhantao58dt47=2925.com@em7877.tm.openai.com 代发)',
+    '收件人: zhzhantao58dt47 <zhzhantao58dt47@2925.com>',
+    '时间: 2026-06-18 13:37:36',
+    'OpenAI',
+    '输入此临时验证码以继续:',
+    '137625',
+    '如果你未尝试将电子邮件地址关联到你的帐户，请忽略此电子邮件。',
+  ].join('\n');
+
+  assert.equal(
+    api.extractVerificationCode(bodyText, {
+      requireContext: true,
+      codePatterns: [
+        {
+          source: 'OpenAI[\\s\\S]{0,160}?(\\d{6})',
+          flags: 'i',
+        },
+        {
+          source: '(?:verification\\s+code|temporary\\s+verification\\s+code|your\\s+chatgpt\\s+code|code(?:\\s+is)?)[^0-9]{0,16}(\\d{6})',
+          flags: 'i',
+        },
+      ],
+    }),
+    '137625'
+  );
+});
+
 test('openMailAndGetMessageText always returns to inbox after opening a 2925 message', async () => {
   const bundle = [
+    extractFunction('normalizeNodeText'),
+    extractFunction('getCurrentPageText'),
+    extractFunction('buildOpenMailReadContext'),
+    extractFunction('isOpenedMailTextReady'),
+    extractFunction('waitForOpenedMailText'),
     extractFunction('returnToInbox'),
     extractFunction('openMailAndGetMessageText'),
   ].join('\n');
@@ -688,6 +764,14 @@ const document = {
 
 function findMailItems() {
   return listVisible ? [mailItem] : [];
+}
+
+function getMailItemText() {
+  return 'ChatGPT code preview';
+}
+
+function isMailboxLoading() {
+  return false;
 }
 
 function findInboxLink() {
@@ -735,6 +819,11 @@ return {
 
 test('openMailAndDeleteAfterRead deletes the opened message before returning to inbox', async () => {
   const bundle = [
+    extractFunction('normalizeNodeText'),
+    extractFunction('getCurrentPageText'),
+    extractFunction('buildOpenMailReadContext'),
+    extractFunction('isOpenedMailTextReady'),
+    extractFunction('waitForOpenedMailText'),
     extractFunction('deleteCurrentMailboxEmail'),
     extractFunction('returnToInbox'),
     extractFunction('openMailAndDeleteAfterRead'),
@@ -757,6 +846,14 @@ const document = {
 
 function findMailItems() {
   return listVisible ? [mailItem] : [];
+}
+
+function getMailItemText() {
+  return 'ChatGPT code preview';
+}
+
+function isMailboxLoading() {
+  return false;
 }
 
 function findDeleteButton() {
@@ -808,6 +905,94 @@ return {
   assert.deepEqual(api.getCalls(), ['mail', 'delete', 'inbox']);
 });
 
+test('openMailAndDeleteAfterRead skips deleting when opened message never finishes loading', async () => {
+  const bundle = [
+    extractFunction('normalizeNodeText'),
+    extractFunction('getCurrentPageText'),
+    extractFunction('buildOpenMailReadContext'),
+    extractFunction('isOpenedMailTextReady'),
+    extractFunction('waitForOpenedMailText'),
+    extractFunction('deleteCurrentMailboxEmail'),
+    extractFunction('returnToInbox'),
+    extractFunction('openMailAndDeleteAfterRead'),
+  ].join('\n');
+
+  const api = new Function(`
+const calls = [];
+const mailItem = { kind: 'mail' };
+const deleteButton = { kind: 'delete' };
+let listVisible = true;
+let bodyText = 'Inbox shell';
+
+const document = {
+  body: {
+    get textContent() {
+      return bodyText;
+    },
+  },
+};
+
+function findMailItems() {
+  return listVisible ? [mailItem] : [];
+}
+
+function getMailItemText() {
+  return 'ChatGPT code preview';
+}
+
+function isMailboxLoading() {
+  return true;
+}
+
+function findDeleteButton() {
+  return deleteButton;
+}
+
+function findInboxLink() {
+  return { kind: 'inbox' };
+}
+
+function simulateClick(node) {
+  if (node === mailItem) {
+    calls.push('mail');
+    listVisible = false;
+    bodyText = 'Loading message... 202167';
+    return;
+  }
+  if (node === deleteButton) {
+    calls.push('delete');
+    return;
+  }
+  calls.push('inbox');
+  listVisible = true;
+}
+
+async function sleep() {}
+async function sleepRandom() {}
+async function waitForMailboxReady() {
+  const items = findMailItems();
+  return { ready: items.length > 0, items, empty: items.length === 0 };
+}
+const console = { warn() {} };
+const MAIL2925_PREFIX = '[MultiPage:mail-2925]';
+
+${bundle}
+
+return {
+  mailItem,
+  openMailAndDeleteAfterRead,
+  getCalls() {
+    return calls.slice();
+  },
+};
+`)();
+
+  const text = await api.openMailAndDeleteAfterRead(api.mailItem, 8);
+
+  assert.match(text, /202167/);
+  assert.deepEqual(api.getCalls(), ['mail', 'inbox']);
+});
+
 test('deleteAllMailboxEmails selects all messages and clicks delete', async () => {
   const bundle = extractFunction('deleteAllMailboxEmails');
 
@@ -824,6 +1009,11 @@ async function returnToInbox() {
 
 function findMailItems() {
   return mailboxCleared ? [] : [{ id: 'mail-1' }];
+}
+
+async function waitForMailboxReady() {
+  const items = findMailItems();
+  return { ready: true, items, empty: items.length === 0 };
 }
 
 function findSelectAllControl() {

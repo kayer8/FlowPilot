@@ -598,7 +598,7 @@
         const responseTimeoutMs = await getResponseTimeoutMsForStep(
           step,
           options,
-          15000,
+          60000,
           '清空 2925 邮箱历史邮件'
         );
         const result = await sendToMailContentScriptResilient(
@@ -677,8 +677,8 @@
               payload: {},
             },
             {
-              timeoutMs: 10000,
-              responseTimeoutMs: 5000,
+              timeoutMs: 60000,
+              responseTimeoutMs: 60000,
               maxRecoveryAttempts: 1,
               logStep: activeVerificationLogStep,
               logStepKey: step === 4 ? 'fetch-signup-code' : 'fetch-login-code',

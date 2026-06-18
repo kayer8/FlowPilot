@@ -159,6 +159,29 @@ const MAIL_SELECT_ALL_SELECTORS = [
   'label[class*="checkbox"]',
   '[class*="checkbox"]',
 ];
+const MAIL_LIST_READY_SELECTORS = [
+  '.el-table',
+  '.el-table__body-wrapper',
+  '.el-table__empty-block',
+  '.mail-list',
+  '.mailList',
+  '[class*="mail-list"]',
+  '[class*="mailList"]',
+  '[class*="MailList"]',
+  '[class*="letter-list"]',
+  '[class*="letterList"]',
+  '[class*="inbox"]',
+  '[class*="Inbox"]',
+];
+const MAIL_LOADING_SELECTORS = [
+  '.el-loading-mask',
+  '.el-loading-spinner',
+  '.ivu-spin',
+  '[class*="loading"]',
+  '[class*="Loading"]',
+  '[class*="spinner"]',
+  '[class*="Spin"]',
+];
 const MAIL_ACTION_CANDIDATE_SELECTORS = 'button, [role="button"], a, label, span, div';
 const MAIL2925_LIMIT_ERROR_PREFIX = 'MAIL2925_LIMIT_REACHED::';
 const MAIL2925_LOGIN_INPUT_SELECTORS = [
@@ -269,6 +292,31 @@ function findMailItems() {
   return [];
 }
 
+function hasVisibleNodeForSelectors(selectors = []) {
+  for (const selector of selectors) {
+    const candidates = document.querySelectorAll(selector);
+    for (const candidate of candidates) {
+      if (isVisibleNode(candidate)) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+function isMailboxLoading() {
+  if (hasVisibleNodeForSelectors(MAIL_LOADING_SELECTORS)) {
+    return true;
+  }
+
+  const pageText = getPageTextSample(2000);
+  return /\u52a0\u8f7d\u4e2d|\u6b63\u5728\u52a0\u8f7d|loading/i.test(pageText);
+}
+
+function isMailListDomReady() {
+  return hasVisibleNodeForSelectors(MAIL_LIST_READY_SELECTORS);
+}
+
 function isLikelyMail2925MailboxPage() {
   const pageText = getPageTextSample(3000);
   if (!pageText) {
@@ -286,6 +334,9 @@ function isLikelyMail2925MailboxPage() {
 
 async function waitForMailboxReady(timeoutMs = 12000) {
   const startedAt = Date.now();
+  const stableEmptyMs = Math.min(2500, Math.max(1000, Math.floor(timeoutMs / 3)));
+  let emptySince = 0;
+
   while (Date.now() - startedAt <= timeoutMs) {
     if (typeof throwIfMail2925LimitReached === 'function') {
       throwIfMail2925LimitReached();
@@ -294,8 +345,18 @@ async function waitForMailboxReady(timeoutMs = 12000) {
     if (items.length > 0) {
       return { ready: true, items, empty: false };
     }
-    if (getMail2925DisplayedMailboxEmail() || isLikelyMail2925MailboxPage()) {
-      return { ready: true, items: [], empty: true };
+
+    const listReady = isMailListDomReady();
+    const shellReady = Boolean(getMail2925DisplayedMailboxEmail() || isLikelyMail2925MailboxPage());
+    if ((listReady || shellReady) && !isMailboxLoading()) {
+      if (!emptySince) {
+        emptySince = Date.now();
+      }
+      if (listReady && Date.now() - emptySince >= stableEmptyMs) {
+        return { ready: true, items: [], empty: true };
+      }
+    } else {
+      emptySince = 0;
     }
     await sleep(500);
   }
@@ -304,8 +365,10 @@ async function waitForMailboxReady(timeoutMs = 12000) {
   if (items.length > 0) {
     return { ready: true, items, empty: false };
   }
+  const listReady = isMailListDomReady();
+  const shellReady = Boolean(getMail2925DisplayedMailboxEmail() || isLikelyMail2925MailboxPage());
   return {
-    ready: Boolean(getMail2925DisplayedMailboxEmail() || isLikelyMail2925MailboxPage()),
+    ready: Boolean((listReady || shellReady) && !isMailboxLoading()),
     items,
     empty: items.length === 0,
   };
@@ -716,27 +779,96 @@ function normalizeRulePatternList(patterns = []) {
   return Array.isArray(patterns) ? patterns : [];
 }
 
-function extractCodeByRulePatterns(text, patterns = []) {
+function normalizeRegexFlags(flags = '') {
+  const collected = [];
+  for (const flag of String(flags || '').replace(/[^dgimsuvy]/g, '')) {
+    if (!collected.includes(flag)) {
+      collected.push(flag);
+    }
+  }
+  return collected.join('');
+}
+
+function buildGlobalSearchRegex(pattern) {
+  const source = String(pattern?.source || '').trim();
+  if (!source) {
+    return null;
+  }
+
+  const baseFlags = normalizeRegexFlags(pattern?.flags || '').replace(/y/g, '');
+  const flags = normalizeRegexFlags(`${baseFlags}g`);
+  return new RegExp(source, flags);
+}
+
+function getCodeCandidateFromMatch(text, match) {
+  const source = String(text || '');
+  if (!match) {
+    return null;
+  }
+
+  const matchText = String(match[0] || '');
+  const matchIndex = Number.isInteger(match.index) ? match.index : source.indexOf(matchText);
+  const resolveIndex = (value, groupIndex = 0) => {
+    if (match.indices?.[groupIndex]?.[0] >= 0) {
+      return match.indices[groupIndex][0];
+    }
+    const relativeIndex = matchText.indexOf(value);
+    if (matchIndex >= 0 && relativeIndex >= 0) {
+      return matchIndex + relativeIndex;
+    }
+    return source.indexOf(value, Math.max(0, matchIndex));
+  };
+
+  for (let index = 1; index < match.length; index += 1) {
+    const candidate = String(match[index] || '').trim();
+    if (/^\d{6}$/.test(candidate)) {
+      return {
+        candidate,
+        index: resolveIndex(candidate, index),
+      };
+    }
+  }
+
+  const fallback = matchText.match(/\d{6}/);
+  if (!fallback) {
+    return null;
+  }
+  return {
+    candidate: fallback[0],
+    index: resolveIndex(fallback[0], 0),
+  };
+}
+
+function findSafeCodeByPattern(text, pattern, options = {}) {
   const normalizedText = String(text || '');
+  const regex = buildGlobalSearchRegex(pattern);
+  if (!regex) {
+    return null;
+  }
+
+  let match = null;
+  while ((match = regex.exec(normalizedText)) !== null) {
+    const result = getCodeCandidateFromMatch(normalizedText, match);
+    if (
+      result
+      && isSafeVerificationCodeCandidate(normalizedText, result.index, result.candidate, options)
+    ) {
+      return result.candidate;
+    }
+    if (match[0] === '') {
+      regex.lastIndex += 1;
+    }
+  }
+
+  return null;
+}
+
+function extractCodeByRulePatterns(text, patterns = [], options = {}) {
   for (const pattern of normalizeRulePatternList(patterns)) {
     try {
-      const source = String(pattern?.source || '').trim();
-      if (!source) {
-        continue;
-      }
-      const flags = String(pattern?.flags || '').replace(/[^dgimsuvy]/g, '');
-      const match = normalizedText.match(new RegExp(source, flags));
-      if (!match) {
-        continue;
-      }
-      for (let index = 1; index < match.length; index += 1) {
-        const candidate = String(match[index] || '').trim();
-        if (candidate) {
-          return candidate;
-        }
-      }
-      if (String(match[0] || '').trim()) {
-        return String(match[0] || '').trim();
+      const candidate = findSafeCodeByPattern(text, pattern, options);
+      if (candidate) {
+        return candidate;
       }
     } catch (_) {
       // Ignore invalid runtime rule patterns and continue with other candidates.
@@ -770,8 +902,8 @@ function extractLegacyStrictVerificationCode(text) {
   ];
 
   for (const pattern of patterns) {
-    const match = normalized.match(pattern);
-    if (match) return match[1];
+    const candidate = findSafeCodeByPattern(normalized, pattern);
+    if (candidate) return candidate;
   }
 
   return null;
@@ -818,14 +950,112 @@ function isLikelyHeaderTimestampCode(text, index, value) {
     && (timeLike || /^20\d{4}$/.test(candidate));
 }
 
-function findSafeStandaloneSixDigitCode(text) {
+function hasVerificationContextNear(text, index, value = '') {
+  const source = String(text || '');
+  const start = Math.max(0, Number(index) - 160);
+  const end = Math.min(source.length, Number(index) + String(value || '').length + 160);
+  const context = source.slice(start, end).replace(/\s+/g, ' ');
+  return /chatgpt|openai|verification|verify|log-?in|login|code|enter\s+this\s+code|temporary|\u9a8c\u8bc1\u7801|\u9a8c\u8bc1|\u767b\u5f55|\u4ee3\u7801/i.test(context);
+}
+
+function isLikelyPageNoiseCode(text, index, value) {
+  const source = String(text || '');
+  const candidate = String(value || '');
+  const before = source.slice(Math.max(0, index - 80), index).replace(/\s+/g, ' ');
+  const after = source.slice(index + candidate.length, index + candidate.length + 80).replace(/\s+/g, ' ');
+  const context = `${before}${candidate}${after}`.trim();
+
+  if (/^20\d{4}$/.test(candidate) && !hasVerificationContextNear(source, index, candidate)) {
+    return true;
+  }
+
+  return /(?:message\s*id|mail\s*id|uid|\u7f16\u53f7|\u5e8f\u53f7|\u6536\u4ef6\u7bb1|\u90ae\u4ef6\u5217\u8868|\u5237\u65b0|\u5220\u9664|\u4e0a\u4e00\u5c01|\u4e0b\u4e00\u5c01|\u8fd4\u56de|\u65f6\u95f4|\u65e5\u671f)[\s\S]{0,40}$/i.test(before)
+    || /^[\s\S]{0,40}(?:message\s*id|mail\s*id|uid|\u7f16\u53f7|\u5e8f\u53f7|\u6536\u4ef6\u7bb1|\u90ae\u4ef6\u5217\u8868|\u5237\u65b0|\u5220\u9664|\u4e0a\u4e00\u5c01|\u4e0b\u4e00\u5c01|\u8fd4\u56de|\u65f6\u95f4|\u65e5\u671f)/i.test(after)
+    || (/^\d{6}$/.test(candidate) && /(?:2925\u90ae\u7bb1|\u6d77\u91cf\u90ae|mailList|mail-list|right-header)/i.test(context) && !hasVerificationContextNear(source, index, candidate));
+}
+
+function isCandidateInsideLongDigitSequence(text, index, value) {
+  const source = String(text || '');
+  const start = Number(index);
+  const candidate = String(value || '');
+  if (!Number.isFinite(start) || start < 0 || !candidate) {
+    return true;
+  }
+
+  const before = source.charAt(start - 1);
+  const after = source.charAt(start + candidate.length);
+  return /\d/.test(before) || /\d/.test(after);
+}
+
+function isEmailTokenChar(ch = '') {
+  return /[a-z0-9._%+\-=@-]/i.test(String(ch || ''));
+}
+
+function isCandidateInsideEmailAddress(text, index, value) {
+  const source = String(text || '');
+  const start = Number(index);
+  const candidate = String(value || '');
+  if (!Number.isFinite(start) || start < 0 || !candidate) {
+    return true;
+  }
+
+  let tokenStart = start;
+  while (tokenStart > 0 && isEmailTokenChar(source.charAt(tokenStart - 1))) {
+    tokenStart -= 1;
+  }
+
+  let tokenEnd = start + candidate.length;
+  while (tokenEnd < source.length && isEmailTokenChar(source.charAt(tokenEnd))) {
+    tokenEnd += 1;
+  }
+
+  const token = source.slice(tokenStart, tokenEnd);
+  return /^(?:bounces?|bounce)\+/i.test(token)
+    || /[a-z0-9._%+\-=]+@[a-z0-9.-]+\.[a-z]{2,}/i.test(token);
+}
+
+function isSafeVerificationCodeCandidate(text, index, value, options = {}) {
+  const source = String(text || '');
+  const candidate = String(value || '').trim();
+  const start = Number(index);
+  const requireContext = Boolean(options?.requireContext);
+
+  if (!/^\d{6}$/.test(candidate) || !Number.isFinite(start) || start < 0) {
+    return false;
+  }
+
+  return !isCandidateInsideLongDigitSequence(source, start, candidate)
+    && !isCandidateInsideEmailAddress(source, start, candidate)
+    && !isLikelyHeaderTimestampCode(source, start, candidate)
+    && !isLikelyPageNoiseCode(source, start, candidate)
+    && (!requireContext || hasVerificationContextNear(source, start, candidate));
+}
+
+function findSafeStandaloneSixDigitCode(text, options = {}) {
   const normalized = String(text || '');
   const pattern = /\b(\d{6})\b/g;
   let match = null;
 
   while ((match = pattern.exec(normalized)) !== null) {
     const candidate = match[1];
-    if (!isLikelyHeaderTimestampCode(normalized, match.index, candidate)) {
+    if (isSafeVerificationCodeCandidate(normalized, match.index, candidate, options)) {
+      return candidate;
+    }
+  }
+
+  return null;
+}
+
+function extractContextualVerificationCode(text, options = {}) {
+  const normalized = String(text || '');
+  const patterns = [
+    /(?:enter\s+this\s+(?:temporary\s+)?(?:verification\s+)?code(?:\s+to\s+continue)?|temporary\s+verification\s+code|verification\s+code|log-?in\s+code|your\s+chatgpt\s+code(?:\s+is)?|code(?:\s+is)?|\u8f93\u5165\u6b64\u4e34\u65f6\u9a8c\u8bc1\u7801\u4ee5\u7ee7\u7eed|\u4e34\u65f6\u9a8c\u8bc1\u7801|\u9a8c\u8bc1\u7801|\u4ee3\u7801)[^0-9]{0,120}(\d{6})/i,
+    /(\d{6})[^0-9]{0,80}(?:is\s+your\s+(?:temporary\s+)?(?:verification\s+)?code|\u662f\u4f60\u7684(?:\u4e34\u65f6)?\u9a8c\u8bc1\u7801)/i,
+  ];
+
+  for (const pattern of patterns) {
+    const candidate = findSafeCodeByPattern(normalized, pattern, options);
+    if (candidate) {
       return candidate;
     }
   }
@@ -837,8 +1067,9 @@ function extractVerificationCode(text, options = {}) {
   const legacyStrictMode = typeof options === 'boolean' ? options : false;
   const strictMode = legacyStrictMode || Boolean(options?.strictMode);
   const codePatterns = legacyStrictMode ? [] : options?.codePatterns;
+  const requireContext = Boolean(options?.requireContext);
   const strictCode = extractLegacyStrictVerificationCode(text);
-  const matchedByRule = extractCodeByRulePatterns(text, codePatterns);
+  const matchedByRule = extractCodeByRulePatterns(text, codePatterns, { requireContext });
   if (strictMode) {
     return matchedByRule || strictCode;
   }
@@ -846,17 +1077,35 @@ function extractVerificationCode(text, options = {}) {
   if (strictCode) return strictCode;
 
   const normalized = String(text || '');
+  const contextualCode = extractContextualVerificationCode(normalized, { requireContext });
+  if (contextualCode) return contextualCode;
 
   const matchCn = normalized.match(/(?:代码为|验证码[^0-9]*?)[\s：:]*(\d{6})/);
-  if (matchCn) return matchCn[1];
+  if (matchCn) {
+    const candidateIndex = matchCn.index + matchCn[0].lastIndexOf(matchCn[1]);
+    if (isSafeVerificationCodeCandidate(normalized, candidateIndex, matchCn[1], { requireContext })) {
+      return matchCn[1];
+    }
+  }
 
   const matchLoginCode = normalized.match(/(?:log-?in\s+code|enter\s+this\s+code)[^0-9]{0,24}(\d{6})/i);
-  if (matchLoginCode) return matchLoginCode[1];
+  if (matchLoginCode) {
+    const candidateIndex = matchLoginCode.index + matchLoginCode[0].lastIndexOf(matchLoginCode[1]);
+    if (isSafeVerificationCodeCandidate(normalized, candidateIndex, matchLoginCode[1], { requireContext })) {
+      return matchLoginCode[1];
+    }
+  }
 
   const matchEn = normalized.match(/code[:\s]+is[:\s]+(\d{6})|code[:\s]+(\d{6})/i);
-  if (matchEn) return matchEn[1] || matchEn[2];
+  if (matchEn) {
+    const candidate = matchEn[1] || matchEn[2];
+    const candidateIndex = matchEn.index + matchEn[0].lastIndexOf(candidate);
+    if (isSafeVerificationCodeCandidate(normalized, candidateIndex, candidate, { requireContext })) {
+      return candidate;
+    }
+  }
 
-  return findSafeStandaloneSixDigitCode(normalized);
+  return findSafeStandaloneSixDigitCode(normalized, { requireContext });
 }
 
 function extractEmails(text = '') {
@@ -1029,6 +1278,78 @@ async function sleepRandom(minMs, maxMs = minMs) {
   await sleep(duration);
 }
 
+function getCurrentPageText() {
+  return document.body?.innerText || document.body?.textContent || '';
+}
+
+function buildOpenMailReadContext(item) {
+  return {
+    beforeText: getCurrentPageText(),
+    previewText: getMailItemText(item),
+  };
+}
+
+function isOpenedMailTextReady(text = '', context = {}) {
+  const normalizedText = normalizeNodeText(text);
+  if (!normalizedText || isMailboxLoading()) {
+    return false;
+  }
+
+  const beforeText = normalizeNodeText(context.beforeText || '');
+  const previewText = normalizeNodeText(context.previewText || '');
+  const changedFromList = !beforeText || normalizedText !== beforeText;
+  const minReadableLength = Math.max(20, Math.min(120, previewText.length || 40));
+
+  if (findMailItems().length === 0 && changedFromList && normalizedText.length >= minReadableLength) {
+    return true;
+  }
+
+  if (previewText && normalizedText.includes(previewText) && normalizedText.length >= previewText.length + 20) {
+    return true;
+  }
+
+  return changedFromList
+    && /chatgpt|openai|verification|login|code|\u9a8c\u8bc1\u7801|\u9a8c\u8bc1|\u767b\u5f55/i.test(normalizedText)
+    && normalizedText.length >= minReadableLength;
+}
+
+async function waitForOpenedMailText(context = {}, timeoutMs = 15000) {
+  const maxChecks = Math.max(1, Math.ceil(Math.max(0, Number(timeoutMs) || 0) / 300));
+  let bestText = '';
+  let lastReadyText = '';
+  let stableReadyChecks = 0;
+
+  for (let attempt = 0; attempt <= maxChecks; attempt += 1) {
+    const text = getCurrentPageText();
+    const normalizedText = normalizeNodeText(text);
+    if (normalizedText) {
+      bestText = text;
+    }
+
+    if (isOpenedMailTextReady(text, context)) {
+      if (normalizedText === lastReadyText) {
+        stableReadyChecks += 1;
+      } else {
+        lastReadyText = normalizedText;
+        stableReadyChecks = 1;
+      }
+      if (stableReadyChecks >= 2) {
+        return { text, ready: true };
+      }
+    } else {
+      lastReadyText = '';
+      stableReadyChecks = 0;
+    }
+
+    await sleep(300);
+  }
+
+  return {
+    text: bestText || getCurrentPageText(),
+    ready: false,
+  };
+}
+
 async function returnToInbox() {
   const currentMailbox = await waitForMailboxReady(1500);
   if (currentMailbox.ready) {
@@ -1053,10 +1374,11 @@ async function returnToInbox() {
 }
 
 async function openMailAndGetMessageText(item) {
+  const readContext = buildOpenMailReadContext(item);
   simulateClick(item);
   try {
-    await sleepRandom(1200, 2200);
-    return document.body?.textContent || '';
+    const result = await waitForOpenedMailText(readContext);
+    return result.text || '';
   } finally {
     await returnToInbox();
   }
@@ -1079,12 +1401,18 @@ async function deleteCurrentMailboxEmail(step) {
 }
 
 async function openMailAndDeleteAfterRead(item, step) {
+  const readContext = buildOpenMailReadContext(item);
+  let readResult = { text: '', ready: false };
   simulateClick(item);
   try {
-    await sleepRandom(1200, 2200);
-    return document.body?.textContent || '';
+    readResult = await waitForOpenedMailText(readContext);
+    return readResult.text || '';
   } finally {
-    await deleteCurrentMailboxEmail(step);
+    if (readResult.ready) {
+      await deleteCurrentMailboxEmail(step);
+    } else {
+      console.warn(MAIL2925_PREFIX, `Step ${step}: opened mail did not finish loading; skipped delete-current cleanup`);
+    }
     await returnToInbox();
   }
 }
@@ -1092,7 +1420,12 @@ async function openMailAndDeleteAfterRead(item, step) {
 async function deleteAllMailboxEmails(step) {
   try {
     await returnToInbox();
-    const initialItems = findMailItems();
+    const mailbox = await waitForMailboxReady(45000);
+    if (!mailbox.ready) {
+      return false;
+    }
+
+    const initialItems = mailbox.items;
     if (initialItems.length === 0) {
       return true;
     }
@@ -1363,6 +1696,7 @@ async function handlePollEmail(step, payload) {
 
         const previewCode = extractVerificationCode(previewText, {
           codePatterns,
+          requireContext: true,
         });
         const openedText = await openMailAndDeleteAfterRead(item, step);
         const openedTargetState = mail2925MatchTargetEmail
@@ -1373,6 +1707,7 @@ async function handlePollEmail(step, payload) {
         }
         const bodyCode = extractVerificationCode(openedText, {
           codePatterns,
+          requireContext: true,
         });
         const candidateCode = bodyCode || previewCode;
 
