@@ -592,7 +592,8 @@
       if (result?.error) {
         throw new Error(result.error);
       }
-      if (result?.deleted === false) {
+      const inboxAlreadyEmpty = result?.empty === true || result?.alreadyEmpty === true;
+      if (result?.deleted === false && !inboxAlreadyEmpty) {
         throw new Error(`步骤 ${visibleStep}：绑定邮箱前未能确认 2925 收件箱已清空。`);
       }
       await addLog(`步骤 ${visibleStep}：2925 收件箱已清空，开始提交绑定邮箱。`, 'info', {

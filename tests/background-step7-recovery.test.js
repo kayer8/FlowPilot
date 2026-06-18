@@ -678,6 +678,86 @@ test('bind-email clears 2925 inbox before submitting add-email', async () => {
   ]);
 });
 
+test('bind-email continues when 2925 inbox is already empty before cleanup', async () => {
+  const events = [];
+  let runtimeState = {
+    email: '',
+    password: 'secret',
+    oauthUrl: 'https://oauth.example/latest',
+    mailProvider: '2925',
+    mail2925BaseEmail: 'base@2925.com',
+  };
+
+  const executor = api.createStep8Executor({
+    addLog: async () => {},
+    chrome: {
+      tabs: {
+        update: async () => {},
+      },
+    },
+    completeNodeFromBackground: async () => {},
+    ensureMail2925MailboxSession: async () => {},
+    getMailConfig: () => ({
+      provider: '2925',
+      label: '2925 邮箱',
+      source: 'mail-2925',
+      url: 'https://2925.com/#/mailList',
+    }),
+    getOAuthFlowStepTimeoutMs: async (defaultTimeoutMs) => defaultTimeoutMs,
+    getState: async () => ({ ...runtimeState }),
+    getTabId: async () => 1,
+    persistRegistrationEmailState: async (_state, email) => {
+      events.push(['persist', email]);
+      runtimeState = {
+        ...runtimeState,
+        email,
+      };
+    },
+    reopenMail2925MailboxSession: async () => {
+      events.push(['reopen2925']);
+    },
+    resolveSignupEmailForFlow: async () => 'bind.empty@2925.com',
+    reuseOrCreateTab: async () => 1,
+    sendToContentScriptResilient: async (_source, message) => {
+      if (message.type === 'GET_LOGIN_AUTH_STATE') {
+        events.push(['auth-state']);
+        return { state: 'add_email_page', url: 'https://auth.openai.com/add-email' };
+      }
+      events.push(['submit-add-email', message.payload.email]);
+      return {
+        submitted: true,
+        displayedEmail: 'bind.empty@2925.com',
+        url: 'https://auth.openai.com/email-verification',
+      };
+    },
+    sendToMailContentScriptResilient: async () => {
+      events.push(['cleanup-empty']);
+      return { ok: true, deleted: false, empty: true };
+    },
+    setState: async (payload) => {
+      runtimeState = {
+        ...runtimeState,
+        ...payload,
+      };
+    },
+    throwIfStopped: () => {},
+  });
+
+  await executor.executeBindEmail({
+    visibleStep: 9,
+    nodeId: 'bind-email',
+    oauthUrl: 'https://oauth.example/latest',
+  });
+
+  assert.deepStrictEqual(events, [
+    ['auth-state'],
+    ['reopen2925'],
+    ['cleanup-empty'],
+    ['submit-add-email', 'bind.empty@2925.com'],
+    ['persist', 'bind.empty@2925.com'],
+  ]);
+});
+
 test('background wires bind-email 2925 cleanup through a forced mailbox tab reopen', () => {
   const backgroundSource = fs.readFileSync('background.js', 'utf8');
   assert.match(backgroundSource, /async function reopenMail2925MailboxSession\(options = \{\}\) \{/);

@@ -109,8 +109,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 
   if (message.type === 'DELETE_ALL_EMAILS') {
-    Promise.resolve(deleteAllMailboxEmails(message.step)).then((deleted) => {
-      sendResponse({ ok: true, deleted });
+    Promise.resolve(deleteAllMailboxEmails(message.step)).then((result) => {
+      if (result && typeof result === 'object') {
+        sendResponse({ ok: true, ...result });
+        return;
+      }
+      sendResponse({ ok: true, deleted: Boolean(result) });
     }).catch((err) => {
       sendResponse({ ok: false, error: err?.message || String(err || '删除邮件失败') });
     });
@@ -1422,17 +1426,22 @@ async function deleteAllMailboxEmails(step) {
     await returnToInbox();
     const mailbox = await waitForMailboxReady(45000);
     if (!mailbox.ready) {
-      return false;
+      const emptyInboxVisible = findMailItems().length === 0
+        && (mailbox.empty === true || isMailListDomReady() || isLikelyMail2925MailboxPage())
+        && !isMailboxLoading();
+      return emptyInboxVisible
+        ? { deleted: false, empty: true, alreadyEmpty: true }
+        : { deleted: false, empty: false };
     }
 
     const initialItems = mailbox.items;
     if (initialItems.length === 0) {
-      return true;
+      return { deleted: false, empty: true, alreadyEmpty: true };
     }
 
     const selectAllControl = findSelectAllControl();
     if (!selectAllControl) {
-      return false;
+      return { deleted: false, empty: false };
     }
 
     if (!isCheckboxChecked(selectAllControl)) {
@@ -1442,22 +1451,23 @@ async function deleteAllMailboxEmails(step) {
 
     const deleteButton = findDeleteButton();
     if (!deleteButton) {
-      return false;
+      return { deleted: false, empty: false };
     }
 
     simulateClick(deleteButton);
     for (let attempt = 0; attempt < 20; attempt += 1) {
       await sleep(250);
       if (findMailItems().length === 0) {
-        return true;
+        return { deleted: true, empty: true };
       }
     }
 
     await sleepRandom(200, 500);
-    return findMailItems().length === 0;
+    const emptyAfterDelete = findMailItems().length === 0;
+    return { deleted: emptyAfterDelete, empty: emptyAfterDelete };
   } catch (err) {
     console.warn(MAIL2925_PREFIX, `Step ${step}: delete-all cleanup failed:`, err?.message || err);
-    return false;
+    return { deleted: false, empty: false, error: err?.message || String(err || '') };
   }
 }
 
