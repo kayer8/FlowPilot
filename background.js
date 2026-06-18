@@ -13786,6 +13786,7 @@ const step8Executor = self.MultiPageBackgroundStep8?.createStep8Executor({
   resolveSignupMethod,
   reuseOrCreateTab,
   sendToContentScriptResilient,
+  sendToMailContentScriptResilient,
   setState,
   shouldUseCustomRegistrationEmail,
   sleepWithStop,

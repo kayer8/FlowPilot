@@ -30,6 +30,7 @@
       sendToContentScriptResilient,
       persistRegistrationEmailState = null,
       phoneVerificationHelpers = null,
+      sendToMailContentScriptResilient = null,
       setState,
       shouldUseCustomRegistrationEmail,
       sleepWithStop,
@@ -527,6 +528,74 @@
       return result || {};
     }
 
+    function getExpectedMail2925MailboxEmail(state = {}) {
+      if (Boolean(state?.mail2925UseAccountPool)) {
+        const currentAccountId = String(state?.currentMail2925AccountId || '').trim();
+        const accounts = Array.isArray(state?.mail2925Accounts) ? state.mail2925Accounts : [];
+        const currentAccount = accounts.find((account) => String(account?.id || '').trim() === currentAccountId) || null;
+        const accountEmail = String(currentAccount?.email || '').trim().toLowerCase();
+        if (accountEmail) {
+          return accountEmail;
+        }
+      }
+
+      return String(state?.mail2925BaseEmail || '').trim().toLowerCase();
+    }
+
+    async function clearMail2925InboxBeforeBindEmail(state = {}, visibleStep = 9) {
+      const latestState = typeof getState === 'function' ? await getState() : state;
+      const mail = typeof getMailConfig === 'function' ? getMailConfig(latestState || state) : null;
+      if (mail?.provider !== '2925') {
+        return;
+      }
+      if (mail?.error) {
+        throw new Error(mail.error);
+      }
+      if (typeof ensureMail2925MailboxSession !== 'function' || typeof sendToMailContentScriptResilient !== 'function') {
+        throw new Error(`步骤 ${visibleStep}：当前缺少 2925 邮箱清空能力，无法在绑定邮箱前清空收件箱。`);
+      }
+
+      await addLog(`步骤 ${visibleStep}：绑定邮箱前正在打开 2925 邮箱并清空收件箱。`, 'warn', {
+        step: visibleStep,
+        stepKey: 'bind-email',
+      });
+      await ensureMail2925MailboxSession({
+        accountId: latestState?.currentMail2925AccountId || null,
+        forceRelogin: false,
+        allowLoginWhenOnLoginPage: Boolean(latestState?.mail2925UseAccountPool),
+        expectedMailboxEmail: getExpectedMail2925MailboxEmail(latestState),
+        actionLabel: `Step ${visibleStep}: clear 2925 inbox before bind email`,
+      });
+
+      const result = await sendToMailContentScriptResilient(
+        mail,
+        {
+          type: 'DELETE_ALL_EMAILS',
+          step: visibleStep,
+          source: 'background',
+          payload: {},
+        },
+        {
+          timeoutMs: 60000,
+          responseTimeoutMs: 60000,
+          maxRecoveryAttempts: 2,
+          logStep: visibleStep,
+          logStepKey: 'bind-email',
+        }
+      );
+
+      if (result?.error) {
+        throw new Error(result.error);
+      }
+      if (result?.deleted === false) {
+        throw new Error(`步骤 ${visibleStep}：绑定邮箱前未能确认 2925 收件箱已清空。`);
+      }
+      await addLog(`步骤 ${visibleStep}：2925 收件箱已清空，开始提交绑定邮箱。`, 'info', {
+        step: visibleStep,
+        stepKey: 'bind-email',
+      });
+    }
+
     async function executeBindEmail(state) {
       const visibleStep = getVisibleStep(state, 9);
       activeFetchLoginCodeStep = visibleStep;
@@ -555,6 +624,7 @@
         throw new Error(`步骤 ${visibleStep}：绑定邮箱步骤只处理添加邮箱页，当前状态：${pageState?.state || 'unknown'}。URL: ${pageState?.url || ''}`.trim());
       }
 
+      await clearMail2925InboxBeforeBindEmail(state, visibleStep);
       const addEmailPreparation = await submitAddEmailIfNeeded(state, visibleStep, pageState);
       const preparedState = addEmailPreparation?.state || state;
       const nextPageState = addEmailPreparation?.pageState || pageState;

@@ -596,6 +596,85 @@ test('bind-email submits add-email and requires an email verification page', asy
   ]);
 });
 
+test('bind-email clears 2925 inbox before submitting add-email', async () => {
+  const events = [];
+  let runtimeState = {
+    email: '',
+    password: 'secret',
+    oauthUrl: 'https://oauth.example/latest',
+    mailProvider: '2925',
+    mail2925BaseEmail: 'base@2925.com',
+  };
+
+  const executor = api.createStep8Executor({
+    addLog: async () => {},
+    chrome: {
+      tabs: {
+        update: async () => {},
+      },
+    },
+    completeNodeFromBackground: async () => {},
+    ensureMail2925MailboxSession: async (options) => {
+      events.push(['ensure2925', options.expectedMailboxEmail]);
+    },
+    getMailConfig: () => ({
+      provider: '2925',
+      label: '2925 邮箱',
+      source: 'mail-2925',
+      url: 'https://2925.com/#/mailList',
+    }),
+    getOAuthFlowStepTimeoutMs: async (defaultTimeoutMs) => defaultTimeoutMs,
+    getState: async () => ({ ...runtimeState }),
+    getTabId: async () => 1,
+    persistRegistrationEmailState: async (_state, email) => {
+      events.push(['persist', email]);
+      runtimeState = {
+        ...runtimeState,
+        email,
+      };
+    },
+    resolveSignupEmailForFlow: async () => 'bind.user@2925.com',
+    reuseOrCreateTab: async () => 1,
+    sendToContentScriptResilient: async (_source, message) => {
+      if (message.type === 'GET_LOGIN_AUTH_STATE') {
+        events.push(['auth-state']);
+        return { state: 'add_email_page', url: 'https://auth.openai.com/add-email' };
+      }
+      events.push(['submit-add-email', message.payload.email]);
+      return {
+        submitted: true,
+        displayedEmail: 'bind.user@2925.com',
+        url: 'https://auth.openai.com/email-verification',
+      };
+    },
+    sendToMailContentScriptResilient: async (_mail, message, options) => {
+      events.push(['mail-message', message.type, options.logStepKey]);
+      return { ok: true, deleted: true };
+    },
+    setState: async (payload) => {
+      runtimeState = {
+        ...runtimeState,
+        ...payload,
+      };
+    },
+    throwIfStopped: () => {},
+  });
+
+  await executor.executeBindEmail({
+    visibleStep: 9,
+    nodeId: 'bind-email',
+    oauthUrl: 'https://oauth.example/latest',
+  });
+
+  assert.deepStrictEqual(events, [
+    ['auth-state'],
+    ['ensure2925', 'base@2925.com'],
+    ['mail-message', 'DELETE_ALL_EMAILS', 'bind-email'],
+    ['submit-add-email', 'bind.user@2925.com'],
+    ['persist', 'bind.user@2925.com'],
+  ]);
+});
+
 test('bind-email skips on OAuth consent and rejects direct OAuth after submit', async () => {
   const completions = [];
   const skipExecutor = api.createStep8Executor({
