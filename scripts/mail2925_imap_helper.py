@@ -74,6 +74,12 @@ def mask_email(email_addr):
     return f"{local[:2]}***@{domain}"
 
 
+class Mail2925ImapError(RuntimeError):
+    def __init__(self, code, message):
+        super().__init__(message)
+        self.code = code
+
+
 def decode_mime_words(value):
     if not value:
         return ""
@@ -182,24 +188,75 @@ def normalize_message(uid, raw_message):
     }
 
 
+def get_login_usernames(email_addr):
+    normalized = clean_string(email_addr).lower()
+    usernames = []
+    if normalized:
+        usernames.append(normalized)
+    if "@" in normalized:
+        local = normalized.split("@", 1)[0]
+        if local and local not in usernames:
+            usernames.append(local)
+    return usernames
+
+
+def create_imap_client(host, port, secure):
+    if secure:
+        return imaplib.IMAP4_SSL(host, port, timeout=REQUEST_TIMEOUT_SECONDS)
+    return imaplib.IMAP4(host, port, timeout=REQUEST_TIMEOUT_SECONDS)
+
+
+def close_imap_client(client):
+    if not client:
+        return
+    try:
+        client.logout()
+    except Exception:
+        pass
+
+
 def connect_imap(payload):
     email_addr = clean_string(payload.get("email")).lower()
     password = str(payload.get("password") or "")
     if not email_addr:
-      raise RuntimeError("Missing 2925 email")
+        raise Mail2925ImapError("MISSING_EMAIL", "Missing 2925 email")
     if not password:
-      raise RuntimeError("Missing 2925 password")
+        raise Mail2925ImapError("MISSING_PASSWORD", "Missing 2925 password")
 
     host = clean_string(payload.get("host")) or DEFAULT_IMAP_HOST
     port = int(payload.get("port") or DEFAULT_IMAP_PORT)
     secure = parse_bool(payload.get("secure"), True)
     socket.setdefaulttimeout(REQUEST_TIMEOUT_SECONDS)
-    if secure:
-        client = imaplib.IMAP4_SSL(host, port, timeout=REQUEST_TIMEOUT_SECONDS)
-    else:
-        client = imaplib.IMAP4(host, port, timeout=REQUEST_TIMEOUT_SECONDS)
-    client.login(email_addr, password)
-    return client
+    login_errors = []
+    for username in get_login_usernames(email_addr):
+        client = None
+        try:
+            client = create_imap_client(host, port, secure)
+            client.login(username, password)
+            if username != email_addr:
+                log_info(f"login succeeded with username={username[:2]}***")
+            return client
+        except imaplib.IMAP4.error as exc:
+            login_errors.append(str(exc))
+            close_imap_client(client)
+            continue
+        except Exception:
+            close_imap_client(client)
+            raise
+
+    error_text = "; ".join(login_errors) or "LOGIN failed"
+    raise Mail2925ImapError(
+        "IMAP_LOGIN_FAILED",
+        f"2925 IMAP 登录失败：服务器拒绝当前邮箱密码或授权码。已尝试完整邮箱和邮箱前缀登录。原始错误：{error_text}"
+    )
+
+
+def close_selected_client(client):
+    try:
+        client.close()
+    except Exception:
+        pass
+    close_imap_client(client)
 
 
 def list_latest_messages(payload):
@@ -231,14 +288,7 @@ def list_latest_messages(payload):
             messages.append(normalize_message(uid.decode("ascii", errors="ignore"), raw_message))
         return messages
     finally:
-        try:
-            client.close()
-        except Exception:
-            pass
-        try:
-            client.logout()
-        except Exception:
-            pass
+        close_selected_client(client)
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -270,6 +320,9 @@ class Handler(BaseHTTPRequestHandler):
                 })
                 return
             json_response(self, 404, {"ok": False, "error": "Not found"})
+        except Mail2925ImapError as exc:
+            log_info(f"request failed: {exc}")
+            json_response(self, 500, {"ok": False, "code": exc.code, "error": str(exc)})
         except Exception as exc:
             log_info(f"request failed: {exc}")
             traceback.print_exc()

@@ -62,6 +62,15 @@
       return new URL(path, `${normalizeBaseUrl(baseUrl)}/`).toString();
     }
 
+    class Mail2925ImapFatalError extends Error {
+      constructor(message, code = '') {
+        super(message);
+        this.name = 'Mail2925ImapFatalError';
+        this.code = code;
+        this.fatal = true;
+      }
+    }
+
     function normalizeTargetEmailHints(hints = [], targetEmail = '') {
       const collected = (Array.isArray(hints) ? hints : [])
         .map((item) => cleanString(item).toLowerCase())
@@ -312,6 +321,13 @@
 
       if (!response.ok || parsed?.ok === false) {
         const errorText = parsed?.error || parsed?.message || text || `HTTP ${response.status}`;
+        const errorCode = cleanString(parsed?.code);
+        if (['IMAP_LOGIN_FAILED', 'MISSING_EMAIL', 'MISSING_PASSWORD'].includes(errorCode)) {
+          throw new Mail2925ImapFatalError(
+            `2925 IMAP 登录失败：${errorText}。请检查 2925 账号池里该邮箱的密码是否正确；如果 2925 后台开启了客户端授权码/独立密码，请填授权码而不是网页登录密码。`,
+            errorCode
+          );
+        }
         throw new Error(`2925 IMAP 本地助手返回失败：${errorText}`);
       }
       return parsed || {};
@@ -422,6 +438,9 @@
         } catch (err) {
           lastError = err;
           await addLog(`步骤 ${step}：2925 IMAP 轮询失败：${err?.message || err}`, 'warn');
+          if (err?.fatal) {
+            throw err;
+          }
         }
 
         if (attempt < maxAttempts) {
@@ -435,6 +454,7 @@
     return {
       buildPollRequestPayload,
       getMail2925ImapSettings,
+      Mail2925ImapFatalError,
       normalizeBaseUrl,
       normalizeHelperMessages,
       pollMail2925ImapVerificationCode,

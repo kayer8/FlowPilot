@@ -167,3 +167,46 @@ test('mail2925 imap provider filters explicit mismatched target emails in receiv
   assert.equal(result.code, '222222');
   assert.equal(result.mailId, 'right');
 });
+
+test('mail2925 imap provider stops immediately on helper login failure', async () => {
+  let fetchCalls = 0;
+  let sleepCalls = 0;
+  const provider = createProvider({
+    fetchImpl: async () => {
+      fetchCalls += 1;
+      return {
+        ok: false,
+        status: 500,
+        text: async () => JSON.stringify({
+          ok: false,
+          code: 'IMAP_LOGIN_FAILED',
+          error: '2925 IMAP 登录失败：服务器拒绝当前邮箱密码或授权码。',
+        }),
+      };
+    },
+    sleepWithStop: async () => {
+      sleepCalls += 1;
+    },
+  });
+
+  await assert.rejects(
+    () => provider.pollMail2925ImapVerificationCode(8, {
+      currentMail2925AccountId: 'acc-1',
+      mail2925Accounts: [
+        { id: 'acc-1', email: 'demo@2925.com', password: 'bad-secret' },
+      ],
+    }, {
+      maxAttempts: 3,
+      intervalMs: 1,
+    }),
+    (error) => {
+      assert.equal(error.name, 'Mail2925ImapFatalError');
+      assert.equal(error.code, 'IMAP_LOGIN_FAILED');
+      assert.match(error.message, /授权码|密码/);
+      return true;
+    }
+  );
+
+  assert.equal(fetchCalls, 1);
+  assert.equal(sleepCalls, 0);
+});
