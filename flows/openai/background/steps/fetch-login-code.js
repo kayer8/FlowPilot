@@ -23,6 +23,7 @@
       isTabAlive,
       isVerificationMailPollingError,
       LUCKMAIL_PROVIDER,
+      reopenMail2925MailboxSession = null,
       resolveSignupEmailForFlow,
       resolveVerificationStep,
       rerunStep7ForStep8Recovery,
@@ -559,8 +560,12 @@
         step: visibleStep,
         stepKey: 'bind-email',
       });
-      await ensureMail2925MailboxSession({
+      const ensure2925Session = typeof reopenMail2925MailboxSession === 'function'
+        ? reopenMail2925MailboxSession
+        : ensureMail2925MailboxSession;
+      await ensure2925Session({
         accountId: latestState?.currentMail2925AccountId || null,
+        step: visibleStep,
         forceRelogin: false,
         allowLoginWhenOnLoginPage: Boolean(latestState?.mail2925UseAccountPool),
         expectedMailboxEmail: getExpectedMail2925MailboxEmail(latestState),

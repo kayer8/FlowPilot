@@ -614,8 +614,8 @@ test('bind-email clears 2925 inbox before submitting add-email', async () => {
       },
     },
     completeNodeFromBackground: async () => {},
-    ensureMail2925MailboxSession: async (options) => {
-      events.push(['ensure2925', options.expectedMailboxEmail]);
+    ensureMail2925MailboxSession: async () => {
+      events.push(['unexpected-ensure2925']);
     },
     getMailConfig: () => ({
       provider: '2925',
@@ -632,6 +632,9 @@ test('bind-email clears 2925 inbox before submitting add-email', async () => {
         ...runtimeState,
         email,
       };
+    },
+    reopenMail2925MailboxSession: async (options) => {
+      events.push(['reopen2925', options.expectedMailboxEmail, options.step]);
     },
     resolveSignupEmailForFlow: async () => 'bind.user@2925.com',
     reuseOrCreateTab: async () => 1,
@@ -668,11 +671,20 @@ test('bind-email clears 2925 inbox before submitting add-email', async () => {
 
   assert.deepStrictEqual(events, [
     ['auth-state'],
-    ['ensure2925', 'base@2925.com'],
+    ['reopen2925', 'base@2925.com', 9],
     ['mail-message', 'DELETE_ALL_EMAILS', 'bind-email'],
     ['submit-add-email', 'bind.user@2925.com'],
     ['persist', 'bind.user@2925.com'],
   ]);
+});
+
+test('background wires bind-email 2925 cleanup through a forced mailbox tab reopen', () => {
+  const backgroundSource = fs.readFileSync('background.js', 'utf8');
+  assert.match(backgroundSource, /async function reopenMail2925MailboxSession\(options = \{\}\) \{/);
+  assert.match(backgroundSource, /getTabId\('mail-2925'\)/);
+  assert.match(backgroundSource, /chrome\.tabs\.remove\(tabId\)/);
+  assert.match(backgroundSource, /return ensureMail2925MailboxSession\(options\)/);
+  assert.match(backgroundSource, /reopenMail2925MailboxSession,/);
 });
 
 test('bind-email skips on OAuth consent and rejects direct OAuth after submit', async () => {

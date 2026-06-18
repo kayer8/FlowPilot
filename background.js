@@ -11865,6 +11865,21 @@ async function ensureMail2925MailboxSession(options = {}) {
   return mail2925SessionManager.ensureMail2925MailboxSession(options);
 }
 
+async function reopenMail2925MailboxSession(options = {}) {
+  const tabId = await getTabId('mail-2925').catch(() => null);
+  if (Number.isInteger(tabId)) {
+    await chrome.tabs.remove(tabId).catch(() => {});
+    await addLog('2925：绑定邮箱前已关闭旧邮箱标签页，准备重新打开收件箱。', 'info', {
+      step: Number(options.step) || null,
+      stepKey: 'bind-email',
+    });
+    if (typeof sleepWithStop === 'function') {
+      await sleepWithStop(500);
+    }
+  }
+  return ensureMail2925MailboxSession(options);
+}
+
 async function handleMail2925LimitReachedError(step, error) {
   return mail2925SessionManager.handleMail2925LimitReachedError(step, error);
 }
@@ -13782,6 +13797,7 @@ const step8Executor = self.MultiPageBackgroundStep8?.createStep8Executor({
   persistRegistrationEmailState,
   phoneVerificationHelpers,
   getStepIdByKeyForState,
+  reopenMail2925MailboxSession,
   rerunStep7ForStep8Recovery: (...args) => rerunStep7ForStep8Recovery(...args),
   resolveSignupMethod,
   reuseOrCreateTab,
