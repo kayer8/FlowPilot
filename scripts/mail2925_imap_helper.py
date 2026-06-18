@@ -1,3 +1,4 @@
+import base64
 import email
 import html
 import imaplib
@@ -14,12 +15,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HOST = "127.0.0.1"
 PORT = 17374
-HELPER_BUILD = "detailed-log-2026-06-19"
+HELPER_BUILD = "mailbox-scan-2026-06-19"
 DEFAULT_IMAP_HOST = "imap.2925.com"
 DEFAULT_IMAP_PORT = 993
 REQUEST_TIMEOUT_SECONDS = 45
 FETCH_LIMIT_DEFAULT = 15
 MESSAGE_LOG_LIMIT = 5
+MAILBOX_SCAN_LIMIT = 20
 
 
 def log_info(message):
@@ -138,6 +140,81 @@ def log_poll_messages(messages):
         log_info("poll-code candidate 6-digit codes=none")
 
 
+def parse_mailbox_list_item(raw_item):
+    text = raw_item.decode("utf-8", errors="replace") if isinstance(raw_item, (bytes, bytearray)) else str(raw_item or "")
+    match = re.search(r'\s"?(?P<delimiter>[^"\s])"?\s(?P<name>.+)$', text)
+    if not match:
+        return ""
+    raw_name = match.group("name").strip()
+    if raw_name.startswith('"') and raw_name.endswith('"'):
+        raw_name = raw_name[1:-1]
+    raw_name = raw_name.replace(r'\"', '"')
+    return decode_imap_utf7(raw_name)
+
+
+def list_mailboxes(client):
+    try:
+        status, data = client.list()
+    except Exception as exc:
+        log_info(f"mailbox list failed: {exc}")
+        return []
+    if status != "OK":
+        log_info(f"mailbox list returned status={status}")
+        return []
+    mailboxes = []
+    for item in data or []:
+        name = parse_mailbox_list_item(item)
+        if name:
+            mailboxes.append(name)
+    unique = list(dict.fromkeys(mailboxes))
+    if unique:
+        log_info("mailboxes=" + " | ".join(unique[:MAILBOX_SCAN_LIMIT]))
+    else:
+        log_info("mailboxes=none")
+    return unique
+
+
+def normalize_mailbox_name(value):
+    return clean_string(value).strip('"').lower()
+
+
+def build_mailbox_scan_order(requested_mailbox, available_mailboxes):
+    requested = clean_string(requested_mailbox) or "INBOX"
+    candidates = [requested, "INBOX", "收件箱", "Inbox", "inbox"]
+    candidates.extend(available_mailboxes or [])
+    result = []
+    seen = set()
+    for mailbox in candidates:
+        name = clean_string(mailbox)
+        if not name:
+            continue
+        key = normalize_mailbox_name(name)
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(name)
+    return result[:MAILBOX_SCAN_LIMIT]
+
+
+def select_mailbox(client, mailbox):
+    try_names = [mailbox]
+    encoded = encode_imap_utf7(mailbox)
+    if encoded and encoded != mailbox:
+        try_names.append(encoded)
+    last_status = None
+    for name in try_names:
+        try:
+            status, _ = client.select(f'"{name}"', readonly=True)
+        except Exception as exc:
+            last_status = str(exc)
+            continue
+        if status == "OK":
+            return True
+        last_status = status
+    log_info(f"select mailbox failed mailbox={mailbox} status={last_status}")
+    return False
+
+
 class Mail2925ImapError(RuntimeError):
     def __init__(self, code, message):
         super().__init__(message)
@@ -177,6 +254,58 @@ def decode_bytes(raw_bytes, charset=""):
         except Exception:
             continue
     return raw_bytes.decode("utf-8", errors="replace")
+
+
+def decode_imap_utf7(value):
+    text = value.decode("ascii", errors="replace") if isinstance(value, (bytes, bytearray)) else str(value or "")
+    result = []
+    index = 0
+    while index < len(text):
+        amp_index = text.find("&", index)
+        if amp_index < 0:
+            result.append(text[index:])
+            break
+        result.append(text[index:amp_index])
+        end_index = text.find("-", amp_index)
+        if end_index < 0:
+            result.append(text[amp_index:])
+            break
+        token = text[amp_index + 1:end_index]
+        if token == "":
+            result.append("&")
+        else:
+            try:
+                b64 = token.replace(",", "/")
+                b64 += "=" * ((4 - len(b64) % 4) % 4)
+                result.append(base64.b64decode(b64).decode("utf-16-be", errors="replace"))
+            except Exception:
+                result.append(text[amp_index:end_index + 1])
+        index = end_index + 1
+    return "".join(result)
+
+
+def encode_imap_utf7(value):
+    text = str(value or "")
+    result = []
+    buffer = []
+
+    def flush_buffer():
+        if not buffer:
+            return
+        raw = "".join(buffer).encode("utf-16-be")
+        encoded = base64.b64encode(raw).decode("ascii").rstrip("=").replace("/", ",")
+        result.append(f"&{encoded}-")
+        buffer.clear()
+
+    for char in text:
+        code = ord(char)
+        if 0x20 <= code <= 0x7E:
+            flush_buffer()
+            result.append("&-" if char == "&" else char)
+        else:
+            buffer.append(char)
+    flush_buffer()
+    return "".join(result)
 
 
 def strip_html(raw_html):
@@ -334,39 +463,52 @@ def list_latest_messages(payload):
     limit = max(1, min(50, int(payload.get("limit") or FETCH_LIMIT_DEFAULT)))
     client = connect_imap(payload)
     try:
-        status, _ = client.select(mailbox, readonly=True)
-        if status != "OK":
-            raise RuntimeError(f"Cannot select mailbox: {mailbox}")
-        log_info(f"selected mailbox={mailbox} readonly=True")
+        mailboxes = list_mailboxes(client)
+        scan_order = build_mailbox_scan_order(mailbox, mailboxes)
+        log_info("mailbox scan order=" + " | ".join(scan_order))
 
-        status, data = client.uid("search", None, "ALL")
-        if status != "OK":
-            raise RuntimeError("IMAP search failed")
-        uids = data[0].split() if data and data[0] else []
-        selected_uids = list(reversed(uids))[:limit]
-        newest_uid = selected_uids[0].decode("ascii", errors="ignore") if selected_uids else ""
-        oldest_uid = selected_uids[-1].decode("ascii", errors="ignore") if selected_uids else ""
-        log_info(
-            f"uid search total={len(uids)} fetch_limit={limit} selected={len(selected_uids)} "
-            f"newest_uid={newest_uid or '-'} oldest_selected_uid={oldest_uid or '-'}"
-        )
-        messages = []
-        for uid in selected_uids:
-            status, fetched = client.uid("fetch", uid, "(RFC822)")
+        for scan_mailbox in scan_order:
+            if not select_mailbox(client, scan_mailbox):
+                continue
+            log_info(f"selected mailbox={scan_mailbox} readonly=True")
+
+            status, data = client.uid("search", None, "ALL")
             if status != "OK":
-                log_info(f"uid fetch skipped uid={uid.decode('ascii', errors='ignore')} status={status}")
+                log_info(f"uid search failed mailbox={scan_mailbox} status={status}")
                 continue
-            raw_message = None
-            for item in fetched:
-                if isinstance(item, tuple) and len(item) >= 2 and isinstance(item[1], (bytes, bytearray)):
-                    raw_message = bytes(item[1])
-                    break
-            if not raw_message:
-                log_info(f"uid fetch empty uid={uid.decode('ascii', errors='ignore')}")
-                continue
-            messages.append(normalize_message(uid.decode("ascii", errors="ignore"), raw_message))
-        log_poll_messages(messages)
-        return messages
+            uids = data[0].split() if data and data[0] else []
+            selected_uids = list(reversed(uids))[:limit]
+            newest_uid = selected_uids[0].decode("ascii", errors="ignore") if selected_uids else ""
+            oldest_uid = selected_uids[-1].decode("ascii", errors="ignore") if selected_uids else ""
+            log_info(
+                f"uid search mailbox={scan_mailbox} total={len(uids)} fetch_limit={limit} selected={len(selected_uids)} "
+                f"newest_uid={newest_uid or '-'} oldest_selected_uid={oldest_uid or '-'}"
+            )
+            messages = []
+            for uid in selected_uids:
+                status, fetched = client.uid("fetch", uid, "(RFC822)")
+                uid_text = uid.decode("ascii", errors="ignore")
+                if status != "OK":
+                    log_info(f"uid fetch skipped mailbox={scan_mailbox} uid={uid_text} status={status}")
+                    continue
+                raw_message = None
+                for item in fetched:
+                    if isinstance(item, tuple) and len(item) >= 2 and isinstance(item[1], (bytes, bytearray)):
+                        raw_message = bytes(item[1])
+                        break
+                if not raw_message:
+                    log_info(f"uid fetch empty mailbox={scan_mailbox} uid={uid_text}")
+                    continue
+                message = normalize_message(uid_text, raw_message)
+                message["mailbox"] = scan_mailbox
+                messages.append(message)
+            if messages:
+                log_poll_messages(messages)
+                return messages
+            log_info(f"mailbox {scan_mailbox} returned no fetched messages")
+
+        log_poll_messages([])
+        return []
     finally:
         close_selected_client(client)
 

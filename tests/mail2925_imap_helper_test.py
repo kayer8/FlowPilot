@@ -37,6 +37,17 @@ class Mail2925ImapHelperTest(unittest.TestCase):
             ["123456", "654321", "998877"],
         )
 
+    def test_imap_utf7_decodes_and_encodes_chinese_mailbox_names(self):
+        encoded = helper.encode_imap_utf7("收件箱")
+
+        self.assertEqual(helper.decode_imap_utf7(encoded), "收件箱")
+
+    def test_build_mailbox_scan_order_adds_available_mailboxes(self):
+        self.assertEqual(
+            helper.build_mailbox_scan_order("INBOX", ["收件箱", "已发送", "INBOX"])[:3],
+            ["INBOX", "收件箱", "已发送"],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
