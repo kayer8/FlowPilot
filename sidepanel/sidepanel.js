@@ -822,7 +822,6 @@ const DEFAULT_CPA_CALLBACK_MODE = 'step8';
 const MAIL_2925_MODE_PROVIDE = 'provide';
 const MAIL_2925_MODE_RECEIVE = 'receive';
 const DEFAULT_MAIL_2925_MODE = MAIL_2925_MODE_PROVIDE;
-const MAIL_2925_IMAP_PROVIDER = '2925-imap';
 const CLOUDFLARE_TEMP_EMAIL_LOOKUP_MODE_RECEIVE_MAILBOX = 'receive-mailbox';
 const CLOUDFLARE_TEMP_EMAIL_LOOKUP_MODE_REGISTRATION_EMAIL = 'registration-email';
 const DEFAULT_CLOUDFLARE_TEMP_EMAIL_LOOKUP_MODE = CLOUDFLARE_TEMP_EMAIL_LOOKUP_MODE_RECEIVE_MAILBOX;
@@ -1140,11 +1139,6 @@ function getManagedAliasUtils() {
   return window.MultiPageManagedAliasUtils || null;
 }
 
-function isMail2925LikeProviderValue(provider = selectMailProvider.value) {
-  const normalizedProvider = String(provider || '').trim().toLowerCase();
-  return normalizedProvider === '2925' || normalizedProvider === MAIL_2925_IMAP_PROVIDER;
-}
-
 function isManagedAliasProvider(provider = selectMailProvider.value, mail2925Mode = getSelectedMail2925Mode()) {
   const utils = getManagedAliasUtils();
   if (utils?.usesManagedAliasGeneration) {
@@ -1152,14 +1146,14 @@ function isManagedAliasProvider(provider = selectMailProvider.value, mail2925Mod
   }
   if (utils?.isManagedAliasProvider) {
     const normalizedProvider = String(provider || '').trim().toLowerCase();
-    if (isMail2925LikeProviderValue(normalizedProvider)) {
+    if (normalizedProvider === '2925') {
       return utils.isManagedAliasProvider(provider)
         && normalizeMail2925Mode(mail2925Mode) === MAIL_2925_MODE_PROVIDE;
     }
     return utils.isManagedAliasProvider(provider);
   }
   const normalizedProvider = String(provider || '').trim().toLowerCase();
-  if (isMail2925LikeProviderValue(normalizedProvider)) {
+  if (normalizedProvider === '2925') {
     return normalizeMail2925Mode(mail2925Mode) === MAIL_2925_MODE_PROVIDE;
   }
   return normalizedProvider === GMAIL_PROVIDER;
@@ -1200,7 +1194,7 @@ function getManagedAliasProviderUiCopy(provider = selectMailProvider.value, mail
       hint: '先填写基邮箱后点“生成”，也可以直接手动填写完整的 Gmail 邮箱。',
     };
   }
-  if (isMail2925LikeProviderValue(provider)) {
+  if (String(provider || '').trim().toLowerCase() === '2925') {
     return {
       baseLabel: '基邮箱',
       basePlaceholder: '例如 yourname@2925.com',
@@ -1219,7 +1213,7 @@ function getManagedAliasBaseEmailKey(provider = selectMailProvider.value) {
   if (normalizedProvider === GMAIL_PROVIDER) {
     return 'gmailBaseEmail';
   }
-  if (isMail2925LikeProviderValue(normalizedProvider)) {
+  if (normalizedProvider === '2925') {
     return 'mail2925BaseEmail';
   }
   return '';
@@ -1285,7 +1279,7 @@ async function syncSelectedMail2925PoolAccount(options = {}) {
 }
 
 function getManagedAliasBaseEmailForProvider(provider = selectMailProvider.value, state = latestState) {
-  if (isMail2925LikeProviderValue(provider) && isMail2925AccountPoolEnabled(state)) {
+  if (String(provider || '').trim().toLowerCase() === '2925' && isMail2925AccountPoolEnabled(state)) {
     const currentMail2925Email = getCurrentMail2925Email(state);
     if (currentMail2925Email) {
       return currentMail2925Email;
@@ -11323,7 +11317,7 @@ function applySettingsState(state) {
     ? YYDS_MAIL_PROVIDER
     : 'yyds-mail';
   const restoredMailProvider = isCustomMailProvider(state?.mailProvider)
-    || [ICLOUD_PROVIDER, 'hotmail-api', GMAIL_PROVIDER, 'luckmail-api', yydsMailProvider, '163', '163-vip', '126', 'qq', 'inbucket', '2925', MAIL_2925_IMAP_PROVIDER, 'cloudflare-temp-email', 'cloudmail'].includes(String(state?.mailProvider || '').trim())
+    || [ICLOUD_PROVIDER, 'hotmail-api', GMAIL_PROVIDER, 'luckmail-api', yydsMailProvider, '163', '163-vip', '126', 'qq', 'inbucket', '2925', 'cloudflare-temp-email', 'cloudmail'].includes(String(state?.mailProvider || '').trim())
     ? String(state?.mailProvider || '163').trim()
     : (String(state?.emailGenerator || '').trim().toLowerCase() === 'custom'
       || String(state?.emailGenerator || '').trim().toLowerCase() === 'manual'
@@ -12876,9 +12870,9 @@ function updateMailProviderUI() {
       selectMailProvider.value = String(fallbackOption.value || '').trim();
     }
   }
-  const use2925 = isMail2925LikeProviderValue(selectMailProvider.value);
+  const use2925 = selectMailProvider.value === '2925';
   const useGmail = selectMailProvider.value === GMAIL_PROVIDER;
-  const useMail2925 = selectMailProvider.value === '2925' || selectMailProvider.value === MAIL_2925_IMAP_PROVIDER;
+  const useMail2925 = selectMailProvider.value === '2925';
   const useMail2925AccountPool = useMail2925 && Boolean(inputMail2925UseAccountPool?.checked);
   const mail2925Mode = getSelectedMail2925Mode();
   const gmailAliasGenerator = typeof GMAIL_ALIAS_GENERATOR === 'string'
@@ -15573,13 +15567,13 @@ selectMailProvider.addEventListener('change', async () => {
     && isCurrentEmailManagedByLuckmail();
   const leavingGeneratedAlias = (
     previousProvider !== nextProvider
-    || (isMail2925LikeProviderValue(previousProvider) && normalizeMail2925Mode(previousMail2925Mode) !== getSelectedMail2925Mode())
+    || (previousProvider === '2925' && normalizeMail2925Mode(previousMail2925Mode) !== getSelectedMail2925Mode())
   ) && usesGeneratedAliasMailProvider(previousProvider, previousMail2925Mode)
     && isCurrentEmailManagedByGeneratedAlias(previousProvider, latestState, previousMail2925Mode);
   if (leavingHotmail || leavingLuckmail || leavingGeneratedAlias) {
     await clearRegistrationEmail({ silent: true }).catch(() => { });
   }
-  if (isMail2925LikeProviderValue(nextProvider) && Boolean(inputMail2925UseAccountPool?.checked)) {
+  if (nextProvider === '2925' && Boolean(inputMail2925UseAccountPool?.checked)) {
     syncMail2925PoolAccountOptions(latestState);
     if (!selectMail2925PoolAccount.value && getMail2925Accounts().length > 0) {
       selectMail2925PoolAccount.value = String(getMail2925Accounts()[0]?.id || '');
@@ -15604,11 +15598,10 @@ mail2925ModeButtons.forEach((button) => {
     setMail2925Mode(nextMode);
     updateMailProviderUI();
 
-    const activeProvider = selectMailProvider.value;
-    const leavingGeneratedAlias = isMail2925LikeProviderValue(activeProvider)
+    const leavingGeneratedAlias = selectMailProvider.value === '2925'
       && previousMode === MAIL_2925_MODE_PROVIDE
       && nextMode !== MAIL_2925_MODE_PROVIDE
-      && isCurrentEmailManagedByGeneratedAlias(activeProvider, latestState, previousMode);
+      && isCurrentEmailManagedByGeneratedAlias('2925', latestState, previousMode);
     if (leavingGeneratedAlias) {
       await clearRegistrationEmail({ silent: true }).catch(() => { });
     }
@@ -17807,8 +17800,8 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       }
       if (message.payload.currentMail2925AccountId !== undefined || message.payload.mail2925Accounts !== undefined) {
         renderMail2925Accounts();
-        if (isMail2925LikeProviderValue(selectMailProvider.value)) {
-          setManagedAliasBaseEmailInputForProvider(selectMailProvider.value, latestState);
+        if (selectMailProvider.value === '2925') {
+          setManagedAliasBaseEmailInputForProvider('2925', latestState);
         }
       }
       if (message.payload.customEmailPoolEntries !== undefined || message.payload.customEmailPool !== undefined) {

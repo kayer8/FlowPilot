@@ -354,7 +354,7 @@
         resolvedEmail = purchase.email_address;
       } else if (isGeneratedAliasProvider(state)) {
         if (Boolean(state?.mail2925UseAccountPool)
-          && ['2925', '2925-imap'].includes(String(state?.mailProvider || '').trim().toLowerCase())
+          && String(state?.mailProvider || '').trim().toLowerCase() === '2925'
           && typeof ensureMail2925AccountForFlow === 'function') {
           await ensureMail2925AccountForFlow({
             allowAllocate: true,

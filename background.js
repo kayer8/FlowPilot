@@ -86,7 +86,6 @@ importScripts(
   'cloudflare-temp-email-utils.js',
   'cloudmail-utils.js',
   'background/cloudmail-provider.js',
-  'background/mail-2925-imap-provider.js',
   'yyds-mail-utils.js',
   'background/yyds-mail-provider.js',
   'icloud-utils.js',
@@ -555,7 +554,6 @@ const GMAIL_PROVIDER = 'gmail';
 const GMAIL_ALIAS_GENERATOR = 'gmail-alias';
 const HOTMAIL_PROVIDER = 'hotmail-api';
 const LUCKMAIL_PROVIDER = 'luckmail-api';
-const MAIL_2925_IMAP_PROVIDER = '2925-imap';
 const CLOUDFLARE_TEMP_EMAIL_PROVIDER = 'cloudflare-temp-email';
 const CLOUDFLARE_TEMP_EMAIL_GENERATOR = 'cloudflare-temp-email';
 const CLOUD_MAIL_PROVIDER = 'cloudmail';
@@ -680,10 +678,6 @@ const HOTMAIL_SERVICE_MODE_REMOTE = 'remote';
 const HOTMAIL_SERVICE_MODE_LOCAL = 'local';
 const DEFAULT_HOTMAIL_REMOTE_BASE_URL = '';
 const DEFAULT_HOTMAIL_LOCAL_BASE_URL = 'http://127.0.0.1:17373';
-const DEFAULT_MAIL_2925_IMAP_HELPER_BASE_URL = 'http://127.0.0.1:17374';
-const DEFAULT_MAIL_2925_IMAP_HOST = 'imap.2925.com';
-const DEFAULT_MAIL_2925_IMAP_PORT = 993;
-const DEFAULT_MAIL_2925_IMAP_SECURE = true;
 const DEFAULT_ACCOUNT_RUN_HISTORY_HELPER_BASE_URL = DEFAULT_HOTMAIL_LOCAL_BASE_URL;
 const HOTMAIL_LOCAL_HELPER_TIMEOUT_MS = 45000;
 const DEFAULT_LUCKMAIL_PROJECT_CODE = 'openai';
@@ -1413,10 +1407,6 @@ const PERSISTED_SETTING_DEFAULTS = {
   gmailBaseEmail: '',
   mail2925BaseEmail: '',
   currentMail2925AccountId: '',
-  mail2925ImapHelperBaseUrl: DEFAULT_MAIL_2925_IMAP_HELPER_BASE_URL,
-  mail2925ImapHost: DEFAULT_MAIL_2925_IMAP_HOST,
-  mail2925ImapPort: DEFAULT_MAIL_2925_IMAP_PORT,
-  mail2925ImapSecure: DEFAULT_MAIL_2925_IMAP_SECURE,
   emailPrefix: '',
   inbucketHost: '',
   inbucketMailbox: '',
@@ -2679,7 +2669,7 @@ async function markCurrentRegistrationAccountUsed(state = {}, options = {}) {
     }
   }
 
-  if (isMail2925LikeProvider(latestState.mailProvider) && latestState.currentMail2925AccountId) {
+  if (String(latestState.mailProvider || '').trim().toLowerCase() === '2925' && latestState.currentMail2925AccountId) {
     await patchMail2925Account(latestState.currentMail2925AccountId, {
       lastUsedAt: Date.now(),
       lastError: '',
@@ -2740,7 +2730,6 @@ function normalizeMailProvider(value = '') {
     case GMAIL_PROVIDER:
     case HOTMAIL_PROVIDER:
     case LUCKMAIL_PROVIDER:
-    case MAIL_2925_IMAP_PROVIDER:
     case CLOUDFLARE_TEMP_EMAIL_PROVIDER:
     case CLOUD_MAIL_PROVIDER:
     case yydsMailProvider:
@@ -2884,56 +2873,6 @@ function normalizeHotmailLocalBaseUrl(rawValue = '') {
   }
 }
 
-function normalizeMail2925ImapHelperBaseUrl(rawValue = '') {
-  const value = String(rawValue || '').trim();
-  if (!value) return DEFAULT_MAIL_2925_IMAP_HELPER_BASE_URL;
-
-  try {
-    const parsed = new URL(value);
-    if (!['http:', 'https:'].includes(parsed.protocol)) {
-      return DEFAULT_MAIL_2925_IMAP_HELPER_BASE_URL;
-    }
-
-    if (parsed.pathname === '/2925/poll-code' || parsed.pathname === '/health') {
-      parsed.pathname = '';
-      parsed.search = '';
-      parsed.hash = '';
-    }
-
-    return parsed.toString().replace(/\/$/, '');
-  } catch {
-    return DEFAULT_MAIL_2925_IMAP_HELPER_BASE_URL;
-  }
-}
-
-function normalizeMail2925ImapHost(rawValue = '') {
-  return String(rawValue || '').trim() || DEFAULT_MAIL_2925_IMAP_HOST;
-}
-
-function normalizeMail2925ImapPort(value = '') {
-  const numeric = Math.floor(Number(value));
-  return Number.isInteger(numeric) && numeric > 0 && numeric <= 65535
-    ? numeric
-    : DEFAULT_MAIL_2925_IMAP_PORT;
-}
-
-function normalizeBooleanSetting(value, fallback = false) {
-  if (value === undefined || value === null || value === '') {
-    return Boolean(fallback);
-  }
-  if (typeof value === 'boolean') {
-    return value;
-  }
-  const normalized = String(value || '').trim().toLowerCase();
-  if (['false', '0', 'no', 'off'].includes(normalized)) {
-    return false;
-  }
-  if (['true', '1', 'yes', 'on'].includes(normalized)) {
-    return true;
-  }
-  return Boolean(value);
-}
-
 function normalizeAccountRunHistoryHelperBaseUrl(rawValue = '') {
   const value = String(rawValue || '').trim();
   if (!value) return DEFAULT_ACCOUNT_RUN_HISTORY_HELPER_BASE_URL;
@@ -3048,22 +2987,6 @@ const {
   pollCloudMailVerificationCode,
   resolveCloudMailPollTargetEmail,
 } = cloudMailProvider;
-const mail2925ImapProvider = self.MultiPageBackgroundMail2925ImapProvider.createMail2925ImapProvider({
-  addLog,
-  getState,
-  MAIL_2925_IMAP_DEFAULT_HOST: DEFAULT_MAIL_2925_IMAP_HOST,
-  MAIL_2925_IMAP_DEFAULT_PORT: DEFAULT_MAIL_2925_IMAP_PORT,
-  MAIL_2925_IMAP_DEFAULT_SECURE: DEFAULT_MAIL_2925_IMAP_SECURE,
-  MAIL_2925_IMAP_HELPER_BASE_URL: DEFAULT_MAIL_2925_IMAP_HELPER_BASE_URL,
-  MAIL_2925_IMAP_PROVIDER,
-  normalizeMail2925Accounts,
-  pickVerificationMessageWithTimeFallback,
-  sleepWithStop,
-  throwIfStopped,
-});
-const {
-  pollMail2925ImapVerificationCode,
-} = mail2925ImapProvider;
 const yydsMailProvider = self.MultiPageBackgroundYydsMailProvider.createYydsMailProvider({
   addLog,
   buildYydsMailHeaders,
@@ -3505,14 +3428,6 @@ function normalizePersistentSettingValue(key, value) {
       return normalizeHotmailRemoteBaseUrl(value);
     case 'hotmailLocalBaseUrl':
       return normalizeHotmailLocalBaseUrl(value);
-    case 'mail2925ImapHelperBaseUrl':
-      return normalizeMail2925ImapHelperBaseUrl(value);
-    case 'mail2925ImapHost':
-      return normalizeMail2925ImapHost(value);
-    case 'mail2925ImapPort':
-      return normalizeMail2925ImapPort(value);
-    case 'mail2925ImapSecure':
-      return normalizeBooleanSetting(value, DEFAULT_MAIL_2925_IMAP_SECURE);
     case 'luckmailApiKey':
       return String(value || '');
     case 'luckmailBaseUrl':
@@ -5161,11 +5076,6 @@ function getMail2925Mode(stateOrMode) {
   return normalizeMail2925Mode(stateOrMode?.mail2925Mode);
 }
 
-function isMail2925LikeProvider(provider = '') {
-  const normalizedProvider = String(provider || '').trim().toLowerCase();
-  return normalizedProvider === '2925' || normalizedProvider === MAIL_2925_IMAP_PROVIDER;
-}
-
 async function syncHotmailAccounts(accounts) {
   const normalized = normalizeHotmailAccounts(accounts);
   await setPersistentSettings({ hotmailAccounts: normalized });
@@ -5971,13 +5881,13 @@ function isGeneratedAliasProvider(stateOrProvider, mail2925Mode = undefined) {
     return utils.usesManagedAliasGeneration(provider, { mail2925Mode: resolvedMail2925Mode });
   }
   if (utils?.isManagedAliasProvider) {
-    if (isMail2925LikeProvider(provider)) {
+    if (String(provider || '').trim().toLowerCase() === '2925') {
       return utils.isManagedAliasProvider(provider) && resolvedMail2925Mode === MAIL_2925_MODE_PROVIDE;
     }
     return utils.isManagedAliasProvider(provider);
   }
   return provider === GMAIL_PROVIDER
-    || (isMail2925LikeProvider(provider) && resolvedMail2925Mode === MAIL_2925_MODE_PROVIDE);
+    || (provider === '2925' && resolvedMail2925Mode === MAIL_2925_MODE_PROVIDE);
 }
 
 function shouldUseCustomRegistrationEmail(state = {}) {
@@ -6006,7 +5916,7 @@ function buildGeneratedAliasEmail(state) {
     throw new Error('2925 邮箱前缀未设置，请先在侧边栏填写。');
   }
 
-  if (isMail2925LikeProvider(provider) && isGeneratedAliasProvider(state)) {
+  if (provider === '2925' && isGeneratedAliasProvider(state)) {
     return `${emailPrefix}${generateRandomSuffix(6)}@2925.com`;
   }
 
@@ -6040,10 +5950,6 @@ function parseManagedAliasBaseEmail(rawValue, provider) {
 
   if (provider === GMAIL_PROVIDER) {
     return parseGmailBaseEmail(rawValue);
-  }
-
-  if (!isMail2925LikeProvider(provider)) {
-    return null;
   }
 
   const value = String(rawValue || '').trim().toLowerCase();
@@ -6080,7 +5986,7 @@ function isManagedAliasEmail(value, provider, baseEmail = '') {
       && candidateLocalPart.split('+')[0] === parsedBaseEmail.localPart;
   }
 
-  if (!isMail2925LikeProvider(provider) || candidateDomain !== '2925.com') {
+  if (provider !== '2925' || candidateDomain !== '2925.com') {
     return false;
   }
 
@@ -6103,7 +6009,7 @@ function getManagedAliasBaseEmail(state = {}, provider = state?.mailProvider) {
     return parseManagedAliasBaseEmail(legacyEmailPrefix, normalizedProvider) ? legacyEmailPrefix : '';
   }
 
-  if (isMail2925LikeProvider(normalizedProvider)) {
+  if (normalizedProvider === '2925') {
     const currentAccount = Boolean(state?.mail2925UseAccountPool)
       ? getCurrentMail2925Account(state)
       : null;
@@ -6144,13 +6050,13 @@ function isGeneratedAliasProvider(stateOrProvider, mail2925Mode = undefined) {
     return utils.usesManagedAliasGeneration(provider, { mail2925Mode: resolvedMail2925Mode });
   }
   if (utils?.isManagedAliasProvider) {
-    if (isMail2925LikeProvider(provider)) {
+    if (String(provider || '').trim().toLowerCase() === '2925') {
       return utils.isManagedAliasProvider(provider) && resolvedMail2925Mode === MAIL_2925_MODE_PROVIDE;
     }
     return utils.isManagedAliasProvider(provider);
   }
   return provider === GMAIL_PROVIDER
-    || (isMail2925LikeProvider(provider) && resolvedMail2925Mode === MAIL_2925_MODE_PROVIDE);
+    || (provider === '2925' && resolvedMail2925Mode === MAIL_2925_MODE_PROVIDE);
 }
 
 function shouldUseCustomRegistrationEmail(state = {}) {
@@ -6195,7 +6101,7 @@ function buildGeneratedAliasEmail(state) {
   if (provider === GMAIL_PROVIDER) {
     return `${parsedBaseEmail.localPart}+${generateRandomWordAliasTag()}@${parsedBaseEmail.domain}`;
   }
-  if (isMail2925LikeProvider(provider)) {
+  if (provider === '2925') {
     return `${parsedBaseEmail.localPart}${generateRandomSuffix(6)}@${parsedBaseEmail.domain}`;
   }
 
@@ -11052,7 +10958,7 @@ function hasMail2925RegistrationEmailStateForDestroy(state = {}) {
   const currentEmail = String(state?.email || '').trim();
   return Boolean(
     currentEmail
-    && isMail2925LikeProvider(state?.mailProvider)
+    && String(state?.mailProvider || '').trim().toLowerCase() === '2925'
     && isReusableGeneratedAliasEmail(state, currentEmail)
   );
 }
@@ -12822,7 +12728,7 @@ async function ensureAutoEmailReady(targetRun, totalRuns, attemptRuns) {
 
     let managedAliasState = currentState;
     if (
-      isMail2925LikeProvider(currentState.mailProvider)
+      String(currentState.mailProvider || '').trim().toLowerCase() === '2925'
       && Boolean(currentState.mail2925UseAccountPool)
     ) {
       const account = await ensureMail2925AccountForFlow({
@@ -13617,19 +13523,16 @@ const signupFlowHelpers = self.MultiPageSignupFlowHelpers?.createSignupFlowHelpe
 });
 const openAiMailRules = self.MultiPageOpenAiMailRules?.createOpenAiMailRules({
   getHotmailVerificationRequestTimestamp,
-  MAIL_2925_IMAP_PROVIDER,
   MAIL_2925_VERIFICATION_INTERVAL_MS,
   MAIL_2925_VERIFICATION_MAX_ATTEMPTS,
 });
 const kiroMailRules = self.MultiPageKiroMailRules?.createKiroMailRules({
   LUCKMAIL_PROVIDER,
-  MAIL_2925_IMAP_PROVIDER,
   MAIL_2925_VERIFICATION_INTERVAL_MS,
   MAIL_2925_VERIFICATION_MAX_ATTEMPTS,
 });
 const grokMailRules = self.MultiPageGrokMailRules?.createGrokMailRules({
   LUCKMAIL_PROVIDER,
-  MAIL_2925_IMAP_PROVIDER,
   MAIL_2925_VERIFICATION_INTERVAL_MS,
   MAIL_2925_VERIFICATION_MAX_ATTEMPTS,
 });
@@ -13657,12 +13560,10 @@ const flowMailPollingService = self.MultiPageBackgroundFlowMailPolling?.createFl
   isStopError,
   isTabAlive,
   LUCKMAIL_PROVIDER,
-  MAIL_2925_IMAP_PROVIDER,
   pollCloudflareTempEmailVerificationCode,
   pollCloudMailVerificationCode,
   pollHotmailVerificationCode,
   pollLuckmailVerificationCode,
-  pollMail2925ImapVerificationCode,
   pollYydsMailVerificationCode,
   reuseOrCreateTab,
   sendToMailContentScriptResilient,
@@ -13692,7 +13593,6 @@ const verificationFlowHelpers = self.MultiPageBackgroundVerificationFlow?.create
   isRetryableContentScriptTransportError,
   isStopError,
   LUCKMAIL_PROVIDER,
-  MAIL_2925_IMAP_PROVIDER,
   YYDS_MAIL_PROVIDER,
   MAIL_2925_VERIFICATION_INTERVAL_MS,
   MAIL_2925_VERIFICATION_MAX_ATTEMPTS,
@@ -13700,7 +13600,6 @@ const verificationFlowHelpers = self.MultiPageBackgroundVerificationFlow?.create
   pollCloudMailVerificationCode,
   pollHotmailVerificationCode,
   pollLuckmailVerificationCode,
-  pollMail2925ImapVerificationCode,
   pollYydsMailVerificationCode,
   sendToContentScript,
   sendToContentScriptResilient,
@@ -13829,7 +13728,6 @@ const step4Executor = self.MultiPageBackgroundStep4?.createStep4Executor({
   HOTMAIL_PROVIDER,
   isTabAlive,
   LUCKMAIL_PROVIDER,
-  MAIL_2925_IMAP_PROVIDER,
   CLOUDFLARE_TEMP_EMAIL_PROVIDER,
   CLOUD_MAIL_PROVIDER,
   resolveVerificationStep: verificationFlowHelpers.resolveVerificationStep,
@@ -13897,7 +13795,6 @@ const step8Executor = self.MultiPageBackgroundStep8?.createStep8Executor({
   isTabAlive,
   isVerificationMailPollingError,
   LUCKMAIL_PROVIDER,
-  MAIL_2925_IMAP_PROVIDER,
   resolveVerificationStep: verificationFlowHelpers.resolveVerificationStep,
   resolveSignupEmailForFlow,
   persistRegistrationEmailState,
@@ -14594,9 +14491,6 @@ function getMailConfig(state) {
   }
   if (provider === LUCKMAIL_PROVIDER) {
     return { provider: LUCKMAIL_PROVIDER, label: 'LuckMail（API 购邮）' };
-  }
-  if (provider === MAIL_2925_IMAP_PROVIDER) {
-    return { provider: MAIL_2925_IMAP_PROVIDER, label: '2925 IMAP' };
   }
   if (provider === CLOUDFLARE_TEMP_EMAIL_PROVIDER) {
     return { provider: CLOUDFLARE_TEMP_EMAIL_PROVIDER, label: 'Cloudflare Temp Email' };
