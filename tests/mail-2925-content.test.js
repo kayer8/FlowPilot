@@ -1058,6 +1058,10 @@ function findInboxLink() {
   return { kind: 'inbox' };
 }
 
+async function refreshInbox() {
+  calls.push('refresh');
+}
+
 function simulateClick(node) {
   if (node === mailItem) {
     calls.push('mail');
@@ -1096,7 +1100,45 @@ return {
   const text = await api.openMailAndDeleteAfterRead(api.mailItem, 8);
 
   assert.match(text, /202167/);
-  assert.deepEqual(api.getCalls(), ['mail', 'inbox']);
+  assert.deepEqual(api.getCalls(), ['mail', 'refresh', 'inbox']);
+});
+
+test('refreshInbox reloads the page when no mailbox refresh controls are available', async () => {
+  const bundle = extractFunction('refreshInbox');
+
+  const api = new Function(`
+const calls = [];
+const location = {
+  reload() {
+    calls.push('reload');
+  },
+};
+
+function throwIfMail2925LimitReached() {}
+function findRefreshButton() {
+  return null;
+}
+function findInboxLink() {
+  return null;
+}
+function simulateClick() {
+  calls.push('unexpected-click');
+}
+async function sleepRandom() {}
+
+${bundle}
+
+return {
+  refreshInbox,
+  getCalls() {
+    return calls.slice();
+  },
+};
+`)();
+
+  await api.refreshInbox();
+
+  assert.deepEqual(api.getCalls(), ['reload']);
 });
 
 test('deleteAllMailboxEmails selects all messages and clicks delete', async () => {

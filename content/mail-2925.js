@@ -1443,6 +1443,7 @@ async function openMailAndDeleteAfterRead(item, step) {
       await deleteCurrentMailboxEmail(step);
     } else {
       console.warn(MAIL2925_PREFIX, `Step ${step}: opened mail did not finish loading; skipped delete-current cleanup`);
+      await refreshInbox();
     }
     await returnToInbox();
   }
@@ -1524,6 +1525,12 @@ async function refreshInbox() {
   if (inboxLink) {
     simulateClick(inboxLink);
     await sleepRandom(700, 1200);
+    return;
+  }
+
+  if (typeof location?.reload === 'function') {
+    location.reload();
+    await sleepRandom(1000, 1800);
   }
 }
 
