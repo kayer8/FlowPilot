@@ -173,6 +173,21 @@
       return normalizeProviderId(mail?.provider) === '2925';
     }
 
+    function isMail2925ImapProviderId(providerId = '') {
+      return normalizeProviderId(providerId) === normalizeProviderId(MAIL_2925_IMAP_PROVIDER);
+    }
+
+    function buildMail2925BrowserFallbackConfig(mail = {}) {
+      return {
+        provider: '2925',
+        source: 'mail-2925',
+        url: 'https://2925.com/#/mailList',
+        label: mail?.fallbackLabel || '2925 邮箱（网页兜底）',
+        inject: ['content/utils.js', 'content/operation-delay.js', 'content/mail-2925.js'],
+        injectSource: 'mail-2925',
+      };
+    }
+
     async function pollThroughApiProvider(providerId, step, state, pollPayload, mail, options) {
       const handler = apiProviderHandlers.get(providerId);
       if (!handler) {
@@ -322,16 +337,36 @@
       }
 
       throwIfStopped();
-      const apiResult = await pollThroughApiProvider(providerId, normalizedStep, ruleState, pollPayload, mail, {
-        actionLabel,
-        logOptions,
-        notFoundMessage,
-      });
+      let apiResult = null;
+      let apiError = null;
+      try {
+        apiResult = await pollThroughApiProvider(providerId, normalizedStep, ruleState, pollPayload, mail, {
+          actionLabel,
+          logOptions,
+          notFoundMessage,
+        });
+      } catch (error) {
+        apiError = error;
+      }
       if (apiResult) {
         return apiResult;
       }
+      if (apiError && (!isMail2925ImapProviderId(providerId) || apiError?.fatal)) {
+        throw apiError;
+      }
 
-      return pollThroughBrowserProvider(normalizedStep, ruleState, mail, pollPayload, {
+      const browserMail = isMail2925ImapProviderId(providerId)
+        ? buildMail2925BrowserFallbackConfig(mail)
+        : mail;
+      if (apiError && isMail2925ImapProviderId(providerId)) {
+        await log(
+          `步骤 ${normalizedStep}：2925 IMAP 未从服务器目录读到验证码，改用 2925 网页邮箱兜底读取。原因：${apiError?.message || apiError}`,
+          'warn',
+          logOptions
+        );
+      }
+
+      return pollThroughBrowserProvider(normalizedStep, ruleState, browserMail, pollPayload, {
         actionLabel,
         logOptions,
         logStep: normalizedLogStep || normalizedStep,

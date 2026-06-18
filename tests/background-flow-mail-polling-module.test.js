@@ -97,6 +97,64 @@ test('flow mail polling service dispatches 2925 imap through API handler without
   assert.equal(openedBrowserMail, false);
 });
 
+test('flow mail polling service falls back to 2925 browser mailbox when imap is empty', async () => {
+  const api = loadFlowMailPollingApi();
+  const logs = [];
+  let ensured2925 = null;
+  let mailMessage = null;
+  let mailConfig = null;
+  const service = api.createFlowMailPollingService({
+    addLog: async (message, level, options) => {
+      logs.push({ message, level, options });
+    },
+    buildVerificationPollPayloadForNode: (nodeId, state, overrides) => ({
+      flowId: state.activeFlowId,
+      nodeId,
+      step: 4,
+      targetEmail: 'user@example.com',
+      maxAttempts: 2,
+      intervalMs: 100,
+      ...overrides,
+    }),
+    ensureMail2925MailboxSession: async (options) => {
+      ensured2925 = options;
+    },
+    getMailConfig: () => ({ provider: '2925-imap', label: '2925 IMAP' }),
+    MAIL_2925_IMAP_PROVIDER: '2925-imap',
+    pollMail2925ImapVerificationCode: async () => {
+      throw new Error('2925 IMAP 暂未找到匹配验证码');
+    },
+    sendToMailContentScriptResilient: async (mail, message) => {
+      mailConfig = mail;
+      mailMessage = message;
+      return { code: '112233', emailTimestamp: 789 };
+    },
+  });
+
+  const result = await service.pollFlowVerificationCode({
+    flowId: 'kiro',
+    nodeId: 'kiro-submit-verification-code',
+    state: {
+      activeFlowId: 'kiro',
+      currentMail2925AccountId: 'acct-1',
+      mail2925UseAccountPool: true,
+      mail2925Accounts: [
+        { id: 'acct-1', email: 'pool@example.com' },
+      ],
+    },
+    step: 4,
+    logStepKey: 'kiro-submit-verification-code',
+  });
+
+  assert.equal(result.code, '112233');
+  assert.equal(mailConfig.provider, '2925');
+  assert.equal(mailConfig.source, 'mail-2925');
+  assert.equal(mailMessage.type, 'POLL_EMAIL');
+  assert.equal(ensured2925.accountId, 'acct-1');
+  assert.equal(ensured2925.expectedMailboxEmail, 'pool@example.com');
+  assert.equal(logs.some((entry) => /网页邮箱兜底/.test(entry.message)), true);
+});
+
 test('flow mail polling service prepares browser mail provider sessions and payload timeouts', async () => {
   const api = loadFlowMailPollingApi();
   let ensured2925 = null;
