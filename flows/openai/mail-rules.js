@@ -45,8 +45,8 @@
   function createOpenAiMailRules(deps = {}) {
     const {
       getHotmailVerificationRequestTimestamp = () => 0,
-      MAIL_2925_VERIFICATION_INTERVAL_MS = 180000,
-      MAIL_2925_VERIFICATION_MAX_ATTEMPTS = 3,
+      MAIL_2925_VERIFICATION_INTERVAL_MS = 10000,
+      MAIL_2925_VERIFICATION_MAX_ATTEMPTS = 10,
     } = deps;
 
     function isMail2925Provider(state = {}) {
@@ -107,6 +107,11 @@
         mail2925MatchTargetEmail: shouldMatchMail2925TargetEmail(state),
         maxAttempts: mail2925Provider ? MAIL_2925_VERIFICATION_MAX_ATTEMPTS : 5,
         intervalMs: mail2925Provider ? MAIL_2925_VERIFICATION_INTERVAL_MS : 3000,
+        ...(mail2925Provider ? {
+          mail2925CodeLoadRounds: 3,
+          mail2925CodeLoadTimeoutMs: 60000,
+          mail2925CodeLoadCheckIntervalMs: 5000,
+        } : {}),
       };
     }
 

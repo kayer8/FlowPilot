@@ -766,8 +766,8 @@
         invalidCodeResendDelayMs: mail.provider === '2925' ? 5000 : undefined,
         treatUnknownSubmitTransportAsInvalidCode: mail.provider === '2925' ? true : undefined,
         treatResendTransportErrorAsRequested: mail.provider === '2925' ? true : undefined,
-        initialPollMaxAttempts: mail.provider === '2925' ? 3 : undefined,
-        pollAttemptPlan: mail.provider === '2925' ? [3, 3, 3] : undefined,
+        initialPollMaxAttempts: mail.provider === '2925' ? 10 : undefined,
+        pollAttemptPlan: mail.provider === '2925' ? [10, 10, 10] : undefined,
         resendIntervalMs: mail.provider === LUCKMAIL_PROVIDER
           ? 15000
           : ((mail.provider === HOTMAIL_PROVIDER || mail.provider === '2925')
@@ -940,6 +940,11 @@
       return /STEP8_RESTART_STEP7::/i.test(message);
     }
 
+    function isMail2925CodeNotLoadedError(error) {
+      const message = String(error?.message || error || '');
+      return /MAIL2925_CODE_NOT_LOADED::/i.test(message);
+    }
+
     async function executeStep8(state) {
       let currentState = state;
       let mailPollingAttempt = 1;
@@ -969,6 +974,10 @@
           const authLoginStep = getAuthLoginStepForState(currentState, visibleStep);
           let currentError = err;
           let retryWithoutStep7 = false;
+
+          if (isMail2925CodeNotLoadedError(currentError)) {
+            currentError = new Error(`STEP8_RESTART_STEP7::${currentError.message}`);
+          }
 
           const isMailPollingError = isVerificationMailPollingError(err);
           if (isMailPollingError && !isStep8RestartStep7Error(err)) {

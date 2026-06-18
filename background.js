@@ -12029,8 +12029,8 @@ let ipProxyAutoSyncRunning = false;
 const EMAIL_FETCH_MAX_ATTEMPTS = 5;
 const VERIFICATION_POLL_MAX_ROUNDS = 5;
 const STANDARD_MAIL_VERIFICATION_RESEND_INTERVAL_MS = 25000;
-const MAIL_2925_VERIFICATION_MAX_ATTEMPTS = 3;
-const MAIL_2925_VERIFICATION_INTERVAL_MS = 180000;
+const MAIL_2925_VERIFICATION_MAX_ATTEMPTS = 10;
+const MAIL_2925_VERIFICATION_INTERVAL_MS = 10000;
 const AUTO_RUN_NODE_DELAYS = Object.freeze({
   'open-chatgpt': 2000,
   'submit-signup-email': 2000,
@@ -13599,6 +13599,7 @@ const verificationFlowHelpers = self.MultiPageBackgroundVerificationFlow?.create
   pollHotmailVerificationCode,
   pollLuckmailVerificationCode,
   pollYydsMailVerificationCode,
+  reuseOrCreateTab,
   sendToContentScript,
   sendToContentScriptResilient,
   sendToMailContentScriptResilient,
