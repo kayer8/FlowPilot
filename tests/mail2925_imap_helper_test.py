@@ -43,10 +43,11 @@ class Mail2925ImapHelperTest(unittest.TestCase):
         self.assertEqual(helper.decode_imap_utf7(encoded), "收件箱")
 
     def test_build_mailbox_scan_order_adds_available_mailboxes(self):
-        self.assertEqual(
-            helper.build_mailbox_scan_order("INBOX", ["收件箱", "已发送", "INBOX"])[:3],
-            ["INBOX", "收件箱", "已发送"],
-        )
+        order = helper.build_mailbox_scan_order("INBOX", ["Inbox", "垃圾箱", "INBOX"])
+
+        self.assertIn("INBOX", order)
+        self.assertIn("Inbox", order)
+        self.assertLess(order.index("Inbox"), order.index("垃圾箱"))
 
 
 if __name__ == "__main__":

@@ -15,7 +15,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 HOST = "127.0.0.1"
 PORT = 17374
-HELPER_BUILD = "mailbox-scan-2026-06-19"
+HELPER_BUILD = "mailbox-case-scan-2026-06-19"
 DEFAULT_IMAP_HOST = "imap.2925.com"
 DEFAULT_IMAP_PORT = 993
 REQUEST_TIMEOUT_SECONDS = 45
@@ -175,13 +175,25 @@ def list_mailboxes(client):
 
 
 def normalize_mailbox_name(value):
-    return clean_string(value).strip('"').lower()
+    return clean_string(value).strip('"')
 
 
 def build_mailbox_scan_order(requested_mailbox, available_mailboxes):
     requested = clean_string(requested_mailbox) or "INBOX"
-    candidates = [requested, "INBOX", "收件箱", "Inbox", "inbox"]
-    candidates.extend(available_mailboxes or [])
+    available = [clean_string(mailbox) for mailbox in (available_mailboxes or []) if clean_string(mailbox)]
+    inbox_like_available = [
+        mailbox for mailbox in available
+        if normalize_mailbox_name(mailbox).lower() in ("inbox", "收件箱")
+    ]
+    candidates = [
+        requested,
+        *inbox_like_available,
+        "INBOX",
+        "Inbox",
+        "inbox",
+        "收件箱",
+        *available,
+    ]
     result = []
     seen = set()
     for mailbox in candidates:
