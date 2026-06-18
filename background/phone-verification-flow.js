@@ -1687,6 +1687,14 @@
       return /无法向此电话号码发送(?:短信|文本消息)|无法向此手机号发送(?:短信|文本消息)|无法发送(?:短信|文本消息)到此电话号码|无法发送(?:短信|文本消息)到此手机号|can(?:not|'t)\s+send\s+(?:an?\s+)?(?:sms|text(?:\s+message)?)\s+to\s+(?:this|that)\s+(?:phone\s+)?number|unable\s+to\s+send\s+(?:an?\s+)?(?:sms|text(?:\s+message)?)\s+to\s+(?:this|that)\s+(?:phone\s+)?number/i.test(message);
     }
 
+    function buildPhoneResendBannedNumberError(error) {
+      const message = String(error?.message || error || '').trim();
+      if (message.startsWith(PHONE_RESEND_BANNED_NUMBER_ERROR_PREFIX)) {
+        return new Error(message);
+      }
+      return new Error(`${PHONE_RESEND_BANNED_NUMBER_ERROR_PREFIX}${message || 'OpenAI 无法向此手机号发送短信。'}`);
+    }
+
     function isPhoneResendServerError(error) {
       const message = String(error?.message || error || '').trim();
       if (!message) {
@@ -1737,6 +1745,27 @@
       return combined || 'OpenAI contact-verification 页面在重发短信后返回 HTTP ERROR 500。';
     }
 
+    function getPhoneResendBannedNumberErrorFromSnapshot(snapshot = {}) {
+      const bodyText = [
+        snapshot?.text,
+        snapshot?.bodyText,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      const titleText = String(snapshot?.title || '').replace(/\s+/g, ' ').trim();
+      const combined = [
+        bodyText,
+        titleText,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      return isPhoneResendBannedNumberError(combined) ? combined : '';
+    }
+
     async function readPhoneResendServerErrorFromAuthTab(tabId) {
       if (typeof readAuthTabSnapshot !== 'function') {
         return '';
@@ -1745,6 +1774,24 @@
         return getPhoneResendServerErrorFromSnapshot(await readAuthTabSnapshot(tabId));
       } catch (_) {
         return '';
+      }
+    }
+
+    async function readPhoneResendBannedNumberErrorFromAuthTab(tabId) {
+      if (typeof readAuthTabSnapshot !== 'function') {
+        return '';
+      }
+      try {
+        return getPhoneResendBannedNumberErrorFromSnapshot(await readAuthTabSnapshot(tabId));
+      } catch (_) {
+        return '';
+      }
+    }
+
+    async function throwPhoneResendBannedNumberErrorIfAuthTabShowsIt(tabId) {
+      const bannedNumberText = await readPhoneResendBannedNumberErrorFromAuthTab(tabId);
+      if (bannedNumberText) {
+        throw buildPhoneResendBannedNumberError(bannedNumberText);
       }
     }
 
@@ -6035,6 +6082,8 @@
               onTimeoutWindow: async () => {
                 try {
                   await resendSignupPhoneVerificationCode(tabId);
+                  await throwPhoneResendBannedNumberErrorIfAuthTabShowsIt(tabId);
+                  await throwPhoneResendServerErrorIfAuthTabShowsIt(tabId);
                   await addLog('步骤 4：已点击注册手机验证码页面的“重新发送”。', 'info', {
                     step: 4,
                     stepKey: 'fetch-signup-code',
@@ -6043,9 +6092,13 @@
                   if (isStopRequestedError(resendError)) {
                     throw resendError;
                   }
+                  if (isPhoneResendBannedNumberError(resendError)) {
+                    throw buildPhoneResendBannedNumberError(resendError);
+                  }
                   if (isPhoneResendServerError(resendError)) {
                     throw buildPhoneResendServerError(resendError);
                   }
+                  await throwPhoneResendBannedNumberErrorIfAuthTabShowsIt(tabId);
                   await throwPhoneResendServerErrorIfAuthTabShowsIt(tabId);
                   await addLog(`步骤 4：注册手机验证码页面重发失败，将继续轮询短信。${resendError.message}`, 'warn', {
                     step: 4,
@@ -6080,13 +6133,19 @@
               await requestAdditionalPhoneSms(state, activation);
               try {
                 await resendSignupPhoneVerificationCode(tabId);
+                await throwPhoneResendBannedNumberErrorIfAuthTabShowsIt(tabId);
+                await throwPhoneResendServerErrorIfAuthTabShowsIt(tabId);
               } catch (resendError) {
                 if (isStopRequestedError(resendError)) {
                   throw resendError;
                 }
+                if (isPhoneResendBannedNumberError(resendError)) {
+                  throw buildPhoneResendBannedNumberError(resendError);
+                }
                 if (isPhoneResendServerError(resendError)) {
                   throw buildPhoneResendServerError(resendError);
                 }
+                await throwPhoneResendBannedNumberErrorIfAuthTabShowsIt(tabId);
                 await throwPhoneResendServerErrorIfAuthTabShowsIt(tabId);
                 await addLog(`步骤 4：验证码被拒后点击重发失败。${resendError.message}`, 'warn', {
                   step: 4,
