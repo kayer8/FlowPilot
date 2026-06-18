@@ -766,8 +766,8 @@
         invalidCodeResendDelayMs: mail.provider === '2925' ? 5000 : undefined,
         treatUnknownSubmitTransportAsInvalidCode: mail.provider === '2925' ? true : undefined,
         treatResendTransportErrorAsRequested: mail.provider === '2925' ? true : undefined,
-        initialPollMaxAttempts: mail.provider === '2925' ? 5 : undefined,
-        pollAttemptPlan: mail.provider === '2925' ? [2, 3, 15] : undefined,
+        initialPollMaxAttempts: mail.provider === '2925' ? 3 : undefined,
+        pollAttemptPlan: mail.provider === '2925' ? [3, 3, 3] : undefined,
         resendIntervalMs: mail.provider === LUCKMAIL_PROVIDER
           ? 15000
           : ((mail.provider === HOTMAIL_PROVIDER || mail.provider === '2925')

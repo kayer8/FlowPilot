@@ -45,8 +45,8 @@
   function createOpenAiMailRules(deps = {}) {
     const {
       getHotmailVerificationRequestTimestamp = () => 0,
-      MAIL_2925_VERIFICATION_INTERVAL_MS = 15000,
-      MAIL_2925_VERIFICATION_MAX_ATTEMPTS = 15,
+      MAIL_2925_VERIFICATION_INTERVAL_MS = 180000,
+      MAIL_2925_VERIFICATION_MAX_ATTEMPTS = 3,
     } = deps;
 
     function isMail2925Provider(state = {}) {

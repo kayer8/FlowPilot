@@ -19,8 +19,8 @@ test('mail rule registry exposes canonical OpenAI verification poll payloads', (
 
   const openAiMailRules = openAiApi.createOpenAiMailRules({
     getHotmailVerificationRequestTimestamp: (step) => (step === 4 ? 123 : 456),
-    MAIL_2925_VERIFICATION_INTERVAL_MS: 15000,
-    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 15,
+    MAIL_2925_VERIFICATION_INTERVAL_MS: 180000,
+    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 3,
   });
   const registry = registryApi.createMailRuleRegistry({
     defaultFlowId: 'openai',
@@ -67,8 +67,8 @@ test('mail rule registry exposes canonical OpenAI verification poll payloads', (
       targetEmail: 'user@example.com',
       targetEmailHints: ['user@example.com', 'user=example.com'],
       mail2925MatchTargetEmail: true,
-      maxAttempts: 15,
-      intervalMs: 15000,
+      maxAttempts: 3,
+      intervalMs: 180000,
       excludeCodes: ['111111'],
     }
   );
