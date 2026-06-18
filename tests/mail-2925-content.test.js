@@ -258,6 +258,112 @@ return {
   assert.deepEqual(api.getReadAndDeleteCalls(), ['baseline', 'new']);
 });
 
+test('handlePollEmail refreshes immediately after a matching 2925 mail has no code', async () => {
+  const bundle = [
+    extractFunction('normalizeMinuteTimestamp'),
+    extractFunction('handlePollEmail'),
+  ].join('\n');
+
+  const api = new Function(`
+let state = 'empty';
+let refreshCalls = 0;
+let longSleepCalls = 0;
+const readAndDeleteCalls = [];
+const seenCodes = new Set();
+const firstMail = { id: 'first', text: 'OpenAI security notice without code' };
+const secondMail = { id: 'second', text: 'OpenAI verification code' };
+
+function findMailItems() {
+  if (state === 'empty') {
+    return [];
+  }
+  return state === 'second' ? [secondMail] : [firstMail];
+}
+
+function getMailItemId(item) {
+  return item.id;
+}
+
+function getCurrentMailIds(items = []) {
+  return new Set(items.map((item) => item.id));
+}
+
+function parseMailItemTimestamp() {
+  return Date.now();
+}
+
+function matchesMailFilters(text) {
+  return /openai|verification|notice/i.test(String(text || ''));
+}
+
+function getMailItemText(item) {
+  return item.text;
+}
+
+function extractVerificationCode(text) {
+  const match = String(text || '').match(/(\\d{6})/);
+  return match ? match[1] : null;
+}
+
+async function sleep() {}
+async function sleepRandom(minMs) {
+  if (minMs >= 10000) {
+    longSleepCalls += 1;
+  }
+}
+async function waitForMailboxReady() {
+  const items = findMailItems();
+  return { ready: true, items, empty: items.length === 0 };
+}
+async function returnToInbox() {
+  return true;
+}
+async function refreshInbox() {
+  refreshCalls += 1;
+  if (refreshCalls >= 2) {
+    state = 'second';
+  } else {
+    state = 'first';
+  }
+}
+async function openMailAndDeleteAfterRead(item) {
+  readAndDeleteCalls.push(item.id);
+  return item.id === 'second' ? 'Enter this code 778899' : 'No code in this OpenAI notice';
+}
+
+async function ensureSeenCodesSession() {}
+function persistSeenCodes() {}
+function log() {}
+
+${bundle}
+
+return {
+  handlePollEmail,
+  getRefreshCalls() {
+    return refreshCalls;
+  },
+  getLongSleepCalls() {
+    return longSleepCalls;
+  },
+  getReadAndDeleteCalls() {
+    return readAndDeleteCalls.slice();
+  },
+};
+`)();
+
+  const result = await api.handlePollEmail(4, {
+    senderFilters: ['openai'],
+    subjectFilters: ['verification', 'notice'],
+    maxAttempts: 2,
+    intervalMs: 15000,
+  });
+
+  assert.equal(result.code, '778899');
+  assert.equal(api.getRefreshCalls(), 2);
+  assert.equal(api.getLongSleepCalls(), 0);
+  assert.deepEqual(api.getReadAndDeleteCalls(), ['first', 'second']);
+});
+
 test('handlePollEmail keeps ignoring targetEmail when receive-mode matching is disabled', async () => {
   const bundle = [
     extractFunction('normalizeMinuteTimestamp'),

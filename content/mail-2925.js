@@ -1673,6 +1673,7 @@ async function handlePollEmail(step, payload) {
       throw new Error('2925 邮箱列表未加载完成，请确认当前已打开收件箱。');
     }
     const items = mailbox.items;
+    let shouldRefreshImmediately = false;
     if (items.length > 0) {
       for (let index = 0; index < items.length; index += 1) {
         const item = items[index];
@@ -1712,14 +1713,17 @@ async function handlePollEmail(step, payload) {
         const candidateCode = bodyCode || previewCode;
 
         if (!candidateCode) {
+          shouldRefreshImmediately = true;
           continue;
         }
 
         if (excludedCodeSet.has(candidateCode)) {
+          shouldRefreshImmediately = true;
           log(`步骤 ${step}：跳过排除的验证码：${candidateCode}`, 'info');
           continue;
         }
         if (seenCodes.has(candidateCode)) {
+          shouldRefreshImmediately = true;
           log(`步骤 ${step}：跳过已处理过的验证码：${candidateCode}`, 'info');
           continue;
         }
@@ -1731,6 +1735,11 @@ async function handlePollEmail(step, payload) {
         log(`步骤 ${step}：已找到验证码：${candidateCode}（来源：${source}${timeLabel}）`, 'ok');
         return { ok: true, code: candidateCode, emailTimestamp: Date.now() };
       }
+    }
+
+    if (shouldRefreshImmediately && attempt < maxAttempts) {
+      log(`Step ${step}: opened a matching 2925 mail without a usable code; refreshing inbox immediately.`, 'info');
+      continue;
     }
 
     if (attempt < maxAttempts) {
