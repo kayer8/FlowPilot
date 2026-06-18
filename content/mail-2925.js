@@ -197,12 +197,6 @@ const MAIL_EMPTY_STATE_SELECTORS = [
 ];
 const MAIL_ACTION_CANDIDATE_SELECTORS = 'button, [role="button"], a, label, span, div';
 const MAIL2925_LIMIT_ERROR_PREFIX = 'MAIL2925_LIMIT_REACHED::';
-const MAIL2925_CODE_NOT_LOADED_ERROR_PREFIX = 'MAIL2925_CODE_NOT_LOADED::';
-const MAIL2925_PAGE_REFRESH_ATTEMPTS = 10;
-const MAIL2925_PAGE_REFRESH_WAIT_MS = 10000;
-const MAIL2925_CODE_LOAD_ROUNDS = 3;
-const MAIL2925_CODE_LOAD_TIMEOUT_MS = 60000;
-const MAIL2925_CODE_LOAD_CHECK_INTERVAL_MS = 5000;
 const MAIL2925_LOGIN_INPUT_SELECTORS = [
   'input[type="email"]',
   'input[name*="mail"]',
@@ -1449,86 +1443,9 @@ async function openMailAndDeleteAfterRead(item, step) {
       await deleteCurrentMailboxEmail(step);
     } else {
       console.warn(MAIL2925_PREFIX, `Step ${step}: opened mail did not finish loading; skipped delete-current cleanup`);
-      await refreshInbox();
     }
     await returnToInbox();
   }
-}
-
-function buildMail2925CodeNotLoadedError(step, reason = '') {
-  const message = [
-    MAIL2925_CODE_NOT_LOADED_ERROR_PREFIX,
-    `步骤 ${step}：2925 邮箱已打开最新邮件，但 3 轮等待后验证码正文仍未加载出来，需要返回第 7 步重新登录。`,
-    reason ? `最后状态：${reason}` : '',
-  ].filter(Boolean).join('');
-  return new Error(message);
-}
-
-async function openMailAndWaitForVerificationCode(item, step, payload = {}) {
-  const {
-    codePatterns = [],
-    excludeCodes = [],
-    mail2925CodeLoadRounds = MAIL2925_CODE_LOAD_ROUNDS,
-    mail2925CodeLoadTimeoutMs = MAIL2925_CODE_LOAD_TIMEOUT_MS,
-    mail2925CodeLoadCheckIntervalMs = MAIL2925_CODE_LOAD_CHECK_INTERVAL_MS,
-  } = payload || {};
-  const excludedCodeSet = new Set(excludeCodes.filter(Boolean));
-  const maxRounds = Math.max(1, Math.floor(Number(mail2925CodeLoadRounds) || MAIL2925_CODE_LOAD_ROUNDS));
-  const timeoutMs = Math.max(1, Number(mail2925CodeLoadTimeoutMs) || MAIL2925_CODE_LOAD_TIMEOUT_MS);
-  const checkIntervalMs = Math.max(1, Number(mail2925CodeLoadCheckIntervalMs) || MAIL2925_CODE_LOAD_CHECK_INTERVAL_MS);
-  let lastText = '';
-
-  for (let round = 1; round <= maxRounds; round += 1) {
-    if (typeof throwIfMail2925LimitReached === 'function') {
-      throwIfMail2925LimitReached();
-    }
-
-    const readContext = buildOpenMailReadContext(item);
-    let readResult = { text: '', ready: false };
-    simulateClick(item);
-    const startedAt = Date.now();
-
-    while (Date.now() - startedAt <= timeoutMs) {
-      if (typeof throwIfMail2925LimitReached === 'function') {
-        throwIfMail2925LimitReached();
-      }
-
-      const checkStartedAt = Date.now();
-      const probeTimeoutMs = Math.min(1000, checkIntervalMs);
-      readResult = await waitForOpenedMailText(readContext, probeTimeoutMs);
-      const openedText = readResult.text || '';
-      if (openedText) {
-        lastText = openedText;
-      }
-
-      const bodyCode = extractVerificationCode(openedText, {
-        codePatterns,
-        requireContext: true,
-      });
-      if (bodyCode && !excludedCodeSet.has(bodyCode) && !seenCodes.has(bodyCode)) {
-        return {
-          code: bodyCode,
-          text: openedText,
-          source: 'body',
-          ready: readResult.ready,
-        };
-      }
-
-      const remainingMs = timeoutMs - (Date.now() - startedAt);
-      if (remainingMs <= 0) {
-        break;
-      }
-      const elapsedCheckMs = Date.now() - checkStartedAt;
-      const waitMs = Math.max(0, checkIntervalMs - elapsedCheckMs);
-      if (waitMs > 0) {
-        await sleep(Math.min(waitMs, remainingMs));
-      }
-    }
-
-    log(`Step ${step}: opened 2925 mail but code was not ready after ${Math.ceil(timeoutMs / 1000)} seconds (round ${round}/${maxRounds}).`, 'warn');
-  }
-
-  throw buildMail2925CodeNotLoadedError(step, normalizeNodeText(lastText).slice(0, 160));
 }
 
 async function deleteAllMailboxEmails(step) {
@@ -1596,12 +1513,18 @@ async function refreshInbox() {
   if (typeof throwIfMail2925LimitReached === 'function') {
     throwIfMail2925LimitReached();
   }
-  if (typeof location?.reload === 'function') {
-    location.reload();
+  const refreshBtn = findRefreshButton();
+  if (refreshBtn) {
+    simulateClick(refreshBtn);
+    await sleepRandom(700, 1200);
     return;
   }
 
-  await sleep(MAIL2925_PAGE_REFRESH_WAIT_MS);
+  const inboxLink = findInboxLink();
+  if (inboxLink) {
+    simulateClick(inboxLink);
+    await sleepRandom(700, 1200);
+  }
 }
 
 async function waitForMail2925View(targetView, timeoutMs = 45000) {
@@ -1738,7 +1661,7 @@ async function ensureMail2925Session(payload = {}) {
   };
 }
 
-async function legacyHandlePollEmail(step, payload) {
+async function handlePollEmail(step, payload) {
   await ensureSeenCodesSession(step, payload);
   const {
     codePatterns = [],
@@ -1874,123 +1797,6 @@ async function legacyHandlePollEmail(step, payload) {
 
   throw new Error(
     `${(maxAttempts * intervalMs / 1000).toFixed(0)} 秒后仍未在 2925 邮箱中找到新的匹配邮件。请手动检查收件箱。`
-  );
-}
-
-async function handlePollEmail(step, payload) {
-  await ensureSeenCodesSession(step, payload);
-  const {
-    codePatterns = [],
-    senderFilters,
-    subjectFilters,
-    maxAttempts = 10,
-    intervalMs = 10000,
-    filterAfterTimestamp = 0,
-    excludeCodes = [],
-    targetEmail = '',
-    targetEmailHints = [],
-    mail2925MatchTargetEmail = false,
-    mail2925CurrentPageOnly = false,
-  } = payload || {};
-  const excludedCodeSet = new Set(excludeCodes.filter(Boolean));
-  const filterAfterMinute = normalizeMinuteTimestamp(Number(filterAfterTimestamp) || 0);
-  const refreshAttempts = Math.max(1, Math.floor(Number(maxAttempts) || 10));
-  const refreshWaitMs = Math.max(1, Number(intervalMs) || 10000);
-
-  if (typeof throwIfMail2925LimitReached === 'function') {
-    throwIfMail2925LimitReached();
-  }
-
-  log(`Step ${step}: polling 2925 mailbox with full page reload (${refreshAttempts} attempts, ${Math.ceil(refreshWaitMs / 1000)}s each).`, 'info');
-
-  for (let attempt = 1; attempt <= refreshAttempts; attempt += 1) {
-    if (typeof throwIfMail2925LimitReached === 'function') {
-      throwIfMail2925LimitReached();
-    }
-
-    if (!mail2925CurrentPageOnly) {
-      await returnToInbox();
-      await refreshInbox();
-    }
-    if (!mail2925CurrentPageOnly && refreshWaitMs !== 10000) {
-      await sleep(refreshWaitMs);
-    }
-
-    const mailbox = await waitForMailboxReady(mail2925CurrentPageOnly ? 5000 : 5000);
-    if (!mailbox.ready) {
-      if (mail2925CurrentPageOnly || attempt >= refreshAttempts) {
-        throw new Error('2925 邮箱列表未加载完成，请确认当前已打开收件箱。');
-      }
-      continue;
-    }
-
-    const items = mailbox.items || [];
-    for (let index = 0; index < items.length; index += 1) {
-      const item = items[index];
-      const itemTimestamp = parseMailItemTimestamp(item);
-      const itemMinute = normalizeMinuteTimestamp(itemTimestamp || 0);
-
-      if (filterAfterMinute && (!itemMinute || itemMinute < filterAfterMinute)) {
-        continue;
-      }
-
-      const previewText = getMailItemText(item);
-      if (!matchesMailFilters(previewText, senderFilters, subjectFilters)) {
-        continue;
-      }
-
-      const previewTargetState = mail2925MatchTargetEmail
-        ? getTargetEmailMatchState(previewText, targetEmail, { targetEmailHints })
-        : { matches: true, hasExplicitEmail: false };
-      if (mail2925MatchTargetEmail && previewTargetState.hasExplicitEmail && !previewTargetState.matches) {
-        continue;
-      }
-
-      const opened = typeof openMailAndWaitForVerificationCode === 'function'
-        ? await openMailAndWaitForVerificationCode(item, step, payload)
-        : {
-          text: await openMailAndDeleteAfterRead(item, step),
-          source: 'body',
-        };
-      const openedText = opened.text || '';
-      const openedTargetState = mail2925MatchTargetEmail
-        ? getTargetEmailMatchState(openedText, targetEmail, { targetEmailHints })
-        : { matches: true, hasExplicitEmail: false };
-      if (mail2925MatchTargetEmail && openedTargetState.hasExplicitEmail && !openedTargetState.matches) {
-        continue;
-      }
-
-      const candidateCode = opened.code || extractVerificationCode(openedText, {
-        codePatterns,
-        requireContext: true,
-      });
-      if (!candidateCode) {
-        continue;
-      }
-      if (excludedCodeSet.has(candidateCode)) {
-        log(`Step ${step}: skipped excluded 2925 verification code ${candidateCode}.`, 'info');
-        continue;
-      }
-      if (seenCodes.has(candidateCode)) {
-        log(`Step ${step}: skipped already-seen 2925 verification code ${candidateCode}.`, 'info');
-        continue;
-      }
-
-      seenCodes.add(candidateCode);
-      persistSeenCodes();
-      const source = opened.source === 'body' ? 'message body' : 'message preview';
-      const timeLabel = itemTimestamp ? `, time: ${new Date(itemTimestamp).toLocaleString('zh-CN', { hour12: false })}` : '';
-      log(`Step ${step}: found 2925 verification code ${candidateCode} (${source}${timeLabel}).`, 'ok');
-      return { ok: true, code: candidateCode, emailTimestamp: Date.now() };
-    }
-
-    if (mail2925CurrentPageOnly) {
-      return { ok: false, noMail: true };
-    }
-  }
-
-  throw new Error(
-    `${(refreshAttempts * refreshWaitMs / 1000).toFixed(0)} seconds later, no matching new mail was found in 2925 mailbox.`
   );
 }
 

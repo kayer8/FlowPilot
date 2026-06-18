@@ -32,7 +32,6 @@
       pollHotmailVerificationCode,
       pollLuckmailVerificationCode,
       pollYydsMailVerificationCode,
-      reuseOrCreateTab,
       sendToContentScript,
       sendToContentScriptResilient,
       sendToMailContentScriptResilient,
@@ -114,10 +113,7 @@
     function getMailPollingResponseTimeoutMs(payload = {}) {
       const maxAttempts = Math.max(1, Math.floor(Number(payload?.maxAttempts) || 1));
       const intervalMs = Math.max(1, Number(payload?.intervalMs) || 3000);
-      const mail2925CodeLoadRounds = Math.max(0, Math.floor(Number(payload?.mail2925CodeLoadRounds) || 0));
-      const mail2925CodeLoadTimeoutMs = Math.max(0, Number(payload?.mail2925CodeLoadTimeoutMs) || 0);
-      const mail2925CodeLoadBudgetMs = mail2925CodeLoadRounds * mail2925CodeLoadTimeoutMs;
-      return Math.max(45000, maxAttempts * intervalMs + mail2925CodeLoadBudgetMs + ICLOUD_MAIL_POLL_TIMEOUT_MARGIN_MS);
+      return Math.max(45000, maxAttempts * intervalMs + ICLOUD_MAIL_POLL_TIMEOUT_MARGIN_MS);
     }
 
     function resolveMailPollingTimeouts(mail, timedPoll) {
@@ -459,11 +455,6 @@
         mail2925MatchTargetEmail,
         maxAttempts: is2925Provider ? MAIL_2925_VERIFICATION_MAX_ATTEMPTS : 5,
         intervalMs: is2925Provider ? MAIL_2925_VERIFICATION_INTERVAL_MS : 3000,
-        ...(is2925Provider ? {
-          mail2925CodeLoadRounds: 3,
-          mail2925CodeLoadTimeoutMs: 60000,
-          mail2925CodeLoadCheckIntervalMs: 5000,
-        } : {}),
         ...overrides,
       };
     }
@@ -517,10 +508,7 @@
         );
       }
 
-      const mail2925CodeLoadRounds = Math.max(0, Math.floor(Number(nextPayload.mail2925CodeLoadRounds) || 0));
-      const mail2925CodeLoadTimeoutMs = Math.max(0, Number(nextPayload.mail2925CodeLoadTimeoutMs) || 0);
-      const mail2925CodeLoadBudgetMs = mail2925CodeLoadRounds * mail2925CodeLoadTimeoutMs;
-      const defaultResponseTimeoutMs = Math.max(45000, nextPayload.maxAttempts * intervalMs + mail2925CodeLoadBudgetMs + 25000);
+      const defaultResponseTimeoutMs = Math.max(45000, nextPayload.maxAttempts * intervalMs + 25000);
       const responseTimeoutMs = disableTimeBudgetCap || remainingMs === null
         ? defaultResponseTimeoutMs
         : Math.max(
@@ -533,100 +521,6 @@
         responseTimeoutMs,
         timeoutMs: responseTimeoutMs,
       };
-    }
-
-    function isMail2925CodeNotLoadedError(error) {
-      const message = String(error?.message || error || '');
-      return /MAIL2925_CODE_NOT_LOADED::/i.test(message);
-    }
-
-    async function sendMailPollMessage(mail, message, options = {}) {
-      if (mail?.provider !== '2925') {
-        return sendToMailContentScriptResilient(mail, message, options);
-      }
-
-      const payload = message?.payload || {};
-      const maxAttempts = Math.max(1, Math.floor(Number(payload.maxAttempts) || 10));
-      const intervalMs = Math.max(1, Number(payload.intervalMs) || 10000);
-      const codeLoadRounds = Math.max(1, Math.floor(Number(payload.mail2925CodeLoadRounds) || 3));
-      const codeLoadTimeoutMs = Math.max(1, Number(payload.mail2925CodeLoadTimeoutMs) || 60000);
-      let lastResult = null;
-      let lastError = null;
-      let inboxRefreshAttempts = 0;
-      let openedMailNoCodeRounds = 0;
-
-      while (inboxRefreshAttempts < maxAttempts || openedMailNoCodeRounds > 0) {
-        const isCodeLoadRetry = openedMailNoCodeRounds > 0;
-        const refreshLabel = isCodeLoadRetry
-          ? `读取正文 ${Math.min(openedMailNoCodeRounds + 1, codeLoadRounds)}/${codeLoadRounds}`
-          : `${inboxRefreshAttempts + 1}/${maxAttempts}`;
-        if (!isCodeLoadRetry) {
-          inboxRefreshAttempts += 1;
-        }
-        throwIfStopped();
-        await addLog(`步骤 ${message.step}：刷新 2925 邮箱网页后等待 ${Math.ceil(intervalMs / 1000)} 秒（${refreshLabel}）。`, 'info');
-        if (typeof reuseOrCreateTab === 'function') {
-          await reuseOrCreateTab(mail.source, mail.url, {
-            inject: mail.inject,
-            injectSource: mail.injectSource,
-            reloadIfSameUrl: true,
-          });
-        }
-        await sleepWithStop(intervalMs);
-
-        try {
-          const result = await sendToMailContentScriptResilient(
-            mail,
-            {
-              ...message,
-              payload: {
-                ...payload,
-                maxAttempts: 1,
-                intervalMs,
-                mail2925CodeLoadRounds: 1,
-                mail2925CodeLoadTimeoutMs: codeLoadTimeoutMs,
-                mail2925CurrentPageOnly: true,
-              },
-            },
-            {
-              ...options,
-              maxRecoveryAttempts: 1,
-            }
-          );
-          if (result?.error) {
-            throw new Error(result.error);
-          }
-          if (result?.code) {
-            return result;
-          }
-          lastResult = result || null;
-          if (isCodeLoadRetry) {
-            openedMailNoCodeRounds += 1;
-            lastError = new Error(`MAIL2925_CODE_NOT_LOADED::步骤 ${message.step}：2925 邮件已打开但刷新后仍未读到验证码正文。`);
-            if (openedMailNoCodeRounds < codeLoadRounds) {
-              await addLog(`步骤 ${message.step}：2925 邮件刷新后仍未读到验证码正文，继续刷新网页重试（${openedMailNoCodeRounds}/${codeLoadRounds}）。`, 'warn');
-              continue;
-            }
-            throw lastError;
-          }
-        } catch (error) {
-          if (isStopError(error) || isMail2925CodeNotLoadedError(error)) {
-            if (isMail2925CodeNotLoadedError(error)) {
-              openedMailNoCodeRounds += 1;
-              if (openedMailNoCodeRounds < codeLoadRounds) {
-                lastError = error;
-                await addLog(`步骤 ${message.step}：2925 邮件已打开但验证码未加载，刷新网页后重试读取正文（${openedMailNoCodeRounds}/${codeLoadRounds}）。`, 'warn');
-                continue;
-              }
-            }
-            throw error;
-          }
-          lastError = error;
-          await addLog(`步骤 ${message.step}：2925 邮箱本轮读取失败：${error?.message || error}`, 'warn');
-        }
-      }
-
-      return lastResult || { ok: false, noMail: true, error: lastError?.message || '' };
     }
 
     async function markVerificationCodeResendRequestedAt(step, requestedAt = Date.now()) {
@@ -880,7 +774,7 @@
               `轮询${getVerificationCodeLabel(step)}验证码邮箱`
             );
             const timeoutWindow = resolveMailPollingTimeouts(mail, timedPoll);
-            const result = await sendMailPollMessage(
+            const result = await sendToMailContentScriptResilient(
               mail,
               {
                 type: 'POLL_EMAIL',
@@ -924,9 +818,6 @@
               if (typeof handleMail2925LimitReachedError === 'function') {
                 throw await handleMail2925LimitReachedError(step, err);
               }
-              throw err;
-            }
-            if (mail?.provider === '2925' && isMail2925CodeNotLoadedError(err)) {
               throw err;
             }
             const isTransportError = isRetryableVerificationTransportError(err);
@@ -1176,7 +1067,7 @@
             `轮询${getVerificationCodeLabel(step)}验证码邮箱`
           );
           const timeoutWindow = resolveMailPollingTimeouts(mail, timedPoll);
-          const result = await sendMailPollMessage(
+          const result = await sendToMailContentScriptResilient(
             mail,
             {
               type: 'POLL_EMAIL',
@@ -1217,9 +1108,6 @@
             if (typeof handleMail2925LimitReachedError === 'function') {
               throw await handleMail2925LimitReachedError(step, err);
             }
-            throw err;
-          }
-          if (mail?.provider === '2925' && isMail2925CodeNotLoadedError(err)) {
             throw err;
           }
           lastError = err;

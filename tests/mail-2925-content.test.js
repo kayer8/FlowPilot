@@ -145,14 +145,14 @@ function buildExtractVerificationCodeBundle() {
   ].join('\n');
 }
 
-test('handlePollEmail can poll the current 2925 page after a background-driven reload', async () => {
+test('handlePollEmail establishes a baseline after opening from detail view and only picks mail from a later refresh', async () => {
   const bundle = [
     extractFunction('normalizeMinuteTimestamp'),
     extractFunction('handlePollEmail'),
   ].join('\n');
 
   const api = new Function(`
-let state = 'with-new';
+let state = 'detail';
 let refreshCalls = 0;
 const clickOrder = [];
 const readAndDeleteCalls = [];
@@ -251,15 +251,14 @@ return {
     subjectFilters: ['verification'],
     maxAttempts: 2,
     intervalMs: 1,
-    mail2925CurrentPageOnly: true,
   });
 
   assert.equal(result.code, '654321');
-  assert.deepEqual(api.getClickOrder(), []);
+  assert.deepEqual(api.getClickOrder(), ['inbox', 'refresh', 'inbox', 'refresh']);
   assert.deepEqual(api.getReadAndDeleteCalls(), ['baseline', 'new']);
 });
 
-test('handlePollEmail reports no mail in current-page mode without refreshing in-page controls', async () => {
+test('handlePollEmail refreshes immediately after a matching 2925 mail has no code', async () => {
   const bundle = [
     extractFunction('normalizeMinuteTimestamp'),
     extractFunction('handlePollEmail'),
@@ -355,15 +354,14 @@ return {
   const result = await api.handlePollEmail(4, {
     senderFilters: ['openai'],
     subjectFilters: ['verification', 'notice'],
-    maxAttempts: 1,
+    maxAttempts: 2,
     intervalMs: 15000,
-    mail2925CurrentPageOnly: true,
   });
 
-  assert.equal(result.noMail, true);
-  assert.equal(api.getRefreshCalls(), 0);
+  assert.equal(result.code, '778899');
+  assert.equal(api.getRefreshCalls(), 2);
   assert.equal(api.getLongSleepCalls(), 0);
-  assert.deepEqual(api.getReadAndDeleteCalls(), []);
+  assert.deepEqual(api.getReadAndDeleteCalls(), ['first', 'second']);
 });
 
 test('handlePollEmail keeps ignoring targetEmail when receive-mode matching is disabled', async () => {
@@ -1060,10 +1058,6 @@ function findInboxLink() {
   return { kind: 'inbox' };
 }
 
-async function refreshInbox() {
-  calls.push('refresh');
-}
-
 function simulateClick(node) {
   if (node === mailItem) {
     calls.push('mail');
@@ -1102,93 +1096,7 @@ return {
   const text = await api.openMailAndDeleteAfterRead(api.mailItem, 8);
 
   assert.match(text, /202167/);
-  assert.deepEqual(api.getCalls(), ['mail', 'refresh', 'inbox']);
-});
-
-test('openMailAndWaitForVerificationCode reports code-not-loaded after configured rounds', async () => {
-  const bundle = [
-    extractFunction('normalizeNodeText'),
-    extractFunction('getCurrentPageText'),
-    extractFunction('buildOpenMailReadContext'),
-    extractFunction('openMailAndWaitForVerificationCode'),
-  ].join('\n');
-
-  const api = new Function(`
-const calls = [];
-const seenCodes = new Set();
-const mailItem = { kind: 'mail' };
-const MAIL2925_CODE_NOT_LOADED_ERROR_PREFIX = 'MAIL2925_CODE_NOT_LOADED::';
-const MAIL2925_CODE_LOAD_ROUNDS = 3;
-const MAIL2925_CODE_LOAD_TIMEOUT_MS = 60000;
-const MAIL2925_CODE_LOAD_CHECK_INTERVAL_MS = 5000;
-const document = { body: { innerText: 'Loading mail body', textContent: 'Loading mail body' } };
-
-function getMailItemText() { return 'OpenAI verification'; }
-function extractVerificationCode() { return null; }
-function buildMail2925CodeNotLoadedError(step) {
-  return new Error(MAIL2925_CODE_NOT_LOADED_ERROR_PREFIX + 'step ' + step);
-}
-function simulateClick() { calls.push('mail'); }
-async function waitForOpenedMailText() { return { text: 'Loading mail body', ready: false }; }
-async function sleep(ms) { calls.push(['sleep', ms]); }
-function log() {}
-
-${bundle}
-
-return {
-  mailItem,
-  openMailAndWaitForVerificationCode,
-  getCalls() { return calls.slice(); },
-};
-`)();
-
-  await assert.rejects(
-    () => api.openMailAndWaitForVerificationCode(api.mailItem, 8, {
-      mail2925CodeLoadRounds: 2,
-      mail2925CodeLoadTimeoutMs: 1,
-      mail2925CodeLoadCheckIntervalMs: 1,
-    }),
-    /MAIL2925_CODE_NOT_LOADED::/
-  );
-  assert.equal(api.getCalls().filter((call) => call === 'mail').length, 2);
-});
-
-test('refreshInbox reloads the page when no mailbox refresh controls are available', async () => {
-  const bundle = extractFunction('refreshInbox');
-
-  const api = new Function(`
-const calls = [];
-const location = {
-  reload() {
-    calls.push('reload');
-  },
-};
-
-function throwIfMail2925LimitReached() {}
-function findRefreshButton() {
-  return null;
-}
-function findInboxLink() {
-  return null;
-}
-function simulateClick() {
-  calls.push('unexpected-click');
-}
-async function sleepRandom() {}
-
-${bundle}
-
-return {
-  refreshInbox,
-  getCalls() {
-    return calls.slice();
-  },
-};
-`)();
-
-  await api.refreshInbox();
-
-  assert.deepEqual(api.getCalls(), ['reload']);
+  assert.deepEqual(api.getCalls(), ['mail', 'inbox']);
 });
 
 test('deleteAllMailboxEmails selects all messages and clicks delete', async () => {

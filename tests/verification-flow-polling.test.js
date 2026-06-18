@@ -73,15 +73,14 @@ function createVerificationFlowTestHelpers(overrides = {}) {
     HOTMAIL_PROVIDER: 'hotmail-api',
     isStopError: () => false,
     LUCKMAIL_PROVIDER: 'luckmail-api',
-    MAIL_2925_VERIFICATION_INTERVAL_MS: 10000,
-    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 10,
+    MAIL_2925_VERIFICATION_INTERVAL_MS: 15000,
+    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 15,
     pollCloudflareTempEmailVerificationCode: async () => ({}),
     pollCloudMailVerificationCode: async () => ({}),
     pollHotmailVerificationCode: async () => ({}),
     pollLuckmailVerificationCode: async () => ({}),
     sendToContentScript: async () => ({}),
     sendToMailContentScriptResilient: async () => ({}),
-    reuseOrCreateTab: async () => {},
     setState: async () => {},
     setNodeStatus: async () => {},
     sleepWithStop: async () => {},
@@ -143,8 +142,8 @@ test('verification flow keeps 2925 polling cadence in the default payload', () =
     HOTMAIL_PROVIDER: 'hotmail-api',
     isStopError: () => false,
     LUCKMAIL_PROVIDER: 'luckmail-api',
-    MAIL_2925_VERIFICATION_INTERVAL_MS: 10000,
-    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 10,
+    MAIL_2925_VERIFICATION_INTERVAL_MS: 15000,
+    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 15,
     pollCloudflareTempEmailVerificationCode: async () => ({}),
     pollHotmailVerificationCode: async () => ({}),
     pollLuckmailVerificationCode: async () => ({}),
@@ -160,10 +159,10 @@ test('verification flow keeps 2925 polling cadence in the default payload', () =
   const step4Payload = helpers.getVerificationPollPayload(4, { email: 'user@example.com', mailProvider: '2925' });
   const step8Payload = helpers.getVerificationPollPayload(8, { email: 'user@example.com', mailProvider: '2925' });
 
-  assert.equal(step4Payload.maxAttempts, 10);
-  assert.equal(step4Payload.intervalMs, 10000);
-  assert.equal(step8Payload.maxAttempts, 10);
-  assert.equal(step8Payload.intervalMs, 10000);
+  assert.equal(step4Payload.maxAttempts, 15);
+  assert.equal(step4Payload.intervalMs, 15000);
+  assert.equal(step8Payload.maxAttempts, 15);
+  assert.equal(step8Payload.intervalMs, 15000);
 });
 
 test('verification flow keeps iCloud step 4 polling at least five attempts under a short remaining budget', async () => {
@@ -242,8 +241,8 @@ test('verification flow only enables 2925 target email matching in receive mode'
     HOTMAIL_PROVIDER: 'hotmail-api',
     isStopError: () => false,
     LUCKMAIL_PROVIDER: 'luckmail-api',
-    MAIL_2925_VERIFICATION_INTERVAL_MS: 10000,
-    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 10,
+    MAIL_2925_VERIFICATION_INTERVAL_MS: 15000,
+    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 15,
     pollCloudflareTempEmailVerificationCode: async () => ({}),
     pollHotmailVerificationCode: async () => ({}),
     pollLuckmailVerificationCode: async () => ({}),
@@ -293,8 +292,8 @@ test('verification flow runs beforeSubmit hook before filling the code', async (
     HOTMAIL_PROVIDER: 'hotmail-api',
     isStopError: () => false,
     LUCKMAIL_PROVIDER: 'luckmail-api',
-    MAIL_2925_VERIFICATION_INTERVAL_MS: 10000,
-    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 10,
+    MAIL_2925_VERIFICATION_INTERVAL_MS: 15000,
+    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 15,
     pollCloudflareTempEmailVerificationCode: async () => ({}),
     pollHotmailVerificationCode: async () => ({}),
     pollLuckmailVerificationCode: async () => ({}),
@@ -357,8 +356,8 @@ test('verification flow skips 2925 mailbox preclear when using a fixed login mai
     HOTMAIL_PROVIDER: 'hotmail-api',
     isStopError: () => false,
     LUCKMAIL_PROVIDER: 'luckmail-api',
-    MAIL_2925_VERIFICATION_INTERVAL_MS: 10000,
-    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 10,
+    MAIL_2925_VERIFICATION_INTERVAL_MS: 15000,
+    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 15,
     pollCloudflareTempEmailVerificationCode: async () => ({}),
     pollHotmailVerificationCode: async () => ({}),
     pollLuckmailVerificationCode: async () => ({}),
@@ -418,8 +417,8 @@ test('verification flow skips 2925 mailbox preclear when using a fixed signup ma
     HOTMAIL_PROVIDER: 'hotmail-api',
     isStopError: () => false,
     LUCKMAIL_PROVIDER: 'luckmail-api',
-    MAIL_2925_VERIFICATION_INTERVAL_MS: 10000,
-    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 10,
+    MAIL_2925_VERIFICATION_INTERVAL_MS: 15000,
+    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 15,
     pollCloudflareTempEmailVerificationCode: async () => ({}),
     pollHotmailVerificationCode: async () => ({}),
     pollLuckmailVerificationCode: async () => ({}),
@@ -494,8 +493,8 @@ test('verification flow closes the tracked iCloud mail tab after a successful ve
     HOTMAIL_PROVIDER: 'hotmail-api',
     isStopError: () => false,
     LUCKMAIL_PROVIDER: 'luckmail-api',
-    MAIL_2925_VERIFICATION_INTERVAL_MS: 10000,
-    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 10,
+    MAIL_2925_VERIFICATION_INTERVAL_MS: 15000,
+    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 15,
     pollCloudflareTempEmailVerificationCode: async () => ({}),
     pollHotmailVerificationCode: async () => ({}),
     pollLuckmailVerificationCode: async () => ({}),
@@ -558,8 +557,8 @@ test('verification flow completes step 8 and flags phone verification when add-p
     HOTMAIL_PROVIDER: 'hotmail-api',
     isStopError: () => false,
     LUCKMAIL_PROVIDER: 'luckmail-api',
-    MAIL_2925_VERIFICATION_INTERVAL_MS: 10000,
-    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 10,
+    MAIL_2925_VERIFICATION_INTERVAL_MS: 15000,
+    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 15,
     pollCloudflareTempEmailVerificationCode: async () => ({}),
     pollHotmailVerificationCode: async () => ({}),
     pollLuckmailVerificationCode: async () => ({}),
@@ -628,8 +627,8 @@ test('verification flow keeps step 8 successful when code submit transport fails
     HOTMAIL_PROVIDER: 'hotmail-api',
     isStopError: () => false,
     LUCKMAIL_PROVIDER: 'luckmail-api',
-    MAIL_2925_VERIFICATION_INTERVAL_MS: 10000,
-    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 10,
+    MAIL_2925_VERIFICATION_INTERVAL_MS: 15000,
+    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 15,
     pollCloudflareTempEmailVerificationCode: async () => ({}),
     pollHotmailVerificationCode: async () => ({}),
     pollLuckmailVerificationCode: async () => ({}),
@@ -705,8 +704,8 @@ test('verification flow treats manual step 8 add-phone confirmation as the same 
     HOTMAIL_PROVIDER: 'hotmail-api',
     isStopError: () => false,
     LUCKMAIL_PROVIDER: 'luckmail-api',
-    MAIL_2925_VERIFICATION_INTERVAL_MS: 10000,
-    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 10,
+    MAIL_2925_VERIFICATION_INTERVAL_MS: 15000,
+    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 15,
     pollCloudflareTempEmailVerificationCode: async () => ({}),
     pollHotmailVerificationCode: async () => ({}),
     pollLuckmailVerificationCode: async () => ({}),
@@ -747,8 +746,8 @@ test('verification flow caps mail polling timeout to the remaining oauth budget'
     HOTMAIL_PROVIDER: 'hotmail-api',
     isStopError: () => false,
     LUCKMAIL_PROVIDER: 'luckmail-api',
-    MAIL_2925_VERIFICATION_INTERVAL_MS: 10000,
-    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 10,
+    MAIL_2925_VERIFICATION_INTERVAL_MS: 15000,
+    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 15,
     pollCloudflareTempEmailVerificationCode: async () => ({}),
     pollHotmailVerificationCode: async () => ({}),
     pollLuckmailVerificationCode: async () => ({}),
@@ -811,8 +810,8 @@ test('verification flow keeps mail polling response timeout above minimum floor'
     HOTMAIL_PROVIDER: 'hotmail-api',
     isStopError: () => false,
     LUCKMAIL_PROVIDER: 'luckmail-api',
-    MAIL_2925_VERIFICATION_INTERVAL_MS: 10000,
-    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 10,
+    MAIL_2925_VERIFICATION_INTERVAL_MS: 15000,
+    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 15,
     pollCloudflareTempEmailVerificationCode: async () => ({}),
     pollHotmailVerificationCode: async () => ({}),
     pollLuckmailVerificationCode: async () => ({}),
@@ -854,7 +853,7 @@ test('verification flow keeps mail polling response timeout above minimum floor'
   assert.equal(mailPollCalls[0].options.responseTimeoutMs, 5000);
 });
 
-test('verification flow keeps 2925 mailbox polling at ten 10-second page refreshes even when oauth budget is smaller', async () => {
+test('verification flow keeps 2925 mailbox polling at 15 refresh attempts even when oauth budget is smaller', async () => {
   const mailPollCalls = [];
 
   const helpers = api.createVerificationFlowHelpers({
@@ -874,8 +873,8 @@ test('verification flow keeps 2925 mailbox polling at ten 10-second page refresh
     HOTMAIL_PROVIDER: 'hotmail-api',
     isStopError: () => false,
     LUCKMAIL_PROVIDER: 'luckmail-api',
-    MAIL_2925_VERIFICATION_INTERVAL_MS: 10000,
-    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 10,
+    MAIL_2925_VERIFICATION_INTERVAL_MS: 15000,
+    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 15,
     pollCloudflareTempEmailVerificationCode: async () => ({}),
     pollHotmailVerificationCode: async () => ({}),
     pollLuckmailVerificationCode: async () => ({}),
@@ -917,95 +916,11 @@ test('verification flow keeps 2925 mailbox polling at ten 10-second page refresh
 
   const pollCall = mailPollCalls.find((entry) => entry.type === 'POLL_EMAIL');
   assert.ok(pollCall);
-  assert.equal(pollCall.payload.maxAttempts, 1);
-  assert.equal(pollCall.payload.intervalMs, 10000);
-  assert.equal(pollCall.payload.mail2925CurrentPageOnly, true);
-  assert.ok(pollCall.options.timeoutMs >= 305000);
+  assert.equal(pollCall.payload.maxAttempts, 15);
+  assert.ok(pollCall.options.timeoutMs >= 250000);
 });
 
-test('verification flow keeps reading a 2925 mail for three rounds even when it appears on the last inbox refresh', async () => {
-  const mailPollCalls = [];
-  const refreshCalls = [];
-  let pollCalls = 0;
-
-  const helpers = api.createVerificationFlowHelpers({
-    addLog: async () => {},
-    chrome: {
-      tabs: {
-        update: async () => {},
-      },
-    },
-    CLOUDFLARE_TEMP_EMAIL_PROVIDER: 'cloudflare-temp-email',
-    completeNodeFromBackground: async () => {},
-    confirmCustomVerificationStepBypassRequest: async () => ({ confirmed: true }),
-    getHotmailVerificationPollConfig: () => ({}),
-    getHotmailVerificationRequestTimestamp: () => 0,
-    getState: async () => ({}),
-    getTabId: async () => 1,
-    HOTMAIL_PROVIDER: 'hotmail-api',
-    isStopError: () => false,
-    LUCKMAIL_PROVIDER: 'luckmail-api',
-    MAIL_2925_VERIFICATION_INTERVAL_MS: 10000,
-    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 10,
-    pollCloudflareTempEmailVerificationCode: async () => ({}),
-    pollHotmailVerificationCode: async () => ({}),
-    pollLuckmailVerificationCode: async () => ({}),
-    reuseOrCreateTab: async () => {
-      refreshCalls.push('reload');
-    },
-    sendToContentScript: async () => ({}),
-    sendToMailContentScriptResilient: async (_mail, message) => {
-      if (message.type !== 'POLL_EMAIL') {
-        return { deleted: true };
-      }
-      pollCalls += 1;
-      mailPollCalls.push(message.payload);
-      if (pollCalls < 10) {
-        return { ok: false, noMail: true };
-      }
-      throw new Error('MAIL2925_CODE_NOT_LOADED::mail opened but body code missing');
-    },
-    setState: async () => {},
-    setStepStatus: async () => {},
-    sleepWithStop: async () => {},
-    throwIfStopped: () => {},
-    VERIFICATION_POLL_MAX_ROUNDS: 5,
-  });
-
-  await assert.rejects(
-    () => helpers.resolveVerificationStep(
-      8,
-      {
-        email: 'user@example.com',
-        mailProvider: '2925',
-        lastLoginCode: null,
-      },
-      { provider: '2925', label: '2925 邮箱' },
-      {
-        resendIntervalMs: 0,
-        disableTimeBudgetCap: true,
-      }
-    ),
-    /MAIL2925_CODE_NOT_LOADED::/
-  );
-
-  assert.equal(mailPollCalls.length, 12);
-  assert.equal(refreshCalls.length, 12);
-  assert.deepStrictEqual(
-    mailPollCalls.map((payload) => ({
-      maxAttempts: payload.maxAttempts,
-      mail2925CurrentPageOnly: payload.mail2925CurrentPageOnly,
-      mail2925CodeLoadRounds: payload.mail2925CodeLoadRounds,
-    })),
-    Array.from({ length: 12 }, () => ({
-      maxAttempts: 1,
-      mail2925CurrentPageOnly: true,
-      mail2925CodeLoadRounds: 1,
-    }))
-  );
-});
-
-test('verification flow can run a 10/10/10 2925 resend polling plan', async () => {
+test('verification flow can run a 2/3/15 2925 resend polling plan', async () => {
   const events = [];
   const pollMaxAttempts = [];
   let pollCalls = 0;
@@ -1023,8 +938,8 @@ test('verification flow can run a 10/10/10 2925 resend polling plan', async () =
     HOTMAIL_PROVIDER: 'hotmail-api',
     isStopError: () => false,
     LUCKMAIL_PROVIDER: 'luckmail-api',
-    MAIL_2925_VERIFICATION_INTERVAL_MS: 10000,
-    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 10,
+    MAIL_2925_VERIFICATION_INTERVAL_MS: 15000,
+    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 15,
     pollCloudflareTempEmailVerificationCode: async () => ({}),
     pollHotmailVerificationCode: async () => ({}),
     pollLuckmailVerificationCode: async () => ({}),
@@ -1064,17 +979,17 @@ test('verification flow can run a 10/10/10 2925 resend polling plan', async () =
     { provider: '2925', label: '2925 邮箱' },
     {
       maxResendRequests: 2,
-      initialPollMaxAttempts: 10,
-      pollAttemptPlan: [10, 10, 10],
+      initialPollMaxAttempts: 5,
+      pollAttemptPlan: [2, 3, 15],
       requestFreshCodeFirst: false,
       filterAfterTimestamp: 123,
       resendIntervalMs: 0,
     }
   );
 
-  assert.deepStrictEqual(events.slice(0, 4), ['poll', 'poll', 'poll', 'fill']);
-  assert.deepStrictEqual(pollMaxAttempts.slice(0, 3), [1, 1, 1]);
-  assert.equal(events.filter((event) => event === 'resend').length, 0);
+  assert.deepStrictEqual(events.slice(0, 5), ['poll', 'resend', 'poll', 'resend', 'poll']);
+  assert.deepStrictEqual(pollMaxAttempts.slice(0, 3), [2, 3, 15]);
+  assert.equal(events.filter((event) => event === 'resend').length, 2);
 });
 
 test('verification flow uses full 2925 polling window after a rejected login code', async () => {
@@ -1095,8 +1010,8 @@ test('verification flow uses full 2925 polling window after a rejected login cod
     HOTMAIL_PROVIDER: 'hotmail-api',
     isStopError: () => false,
     LUCKMAIL_PROVIDER: 'luckmail-api',
-    MAIL_2925_VERIFICATION_INTERVAL_MS: 10000,
-    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 10,
+    MAIL_2925_VERIFICATION_INTERVAL_MS: 15000,
+    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 15,
     pollCloudflareTempEmailVerificationCode: async () => ({}),
     pollHotmailVerificationCode: async () => ({}),
     pollLuckmailVerificationCode: async () => ({}),
@@ -1140,15 +1055,15 @@ test('verification flow uses full 2925 polling window after a rejected login cod
     { provider: '2925', label: '2925 邮箱' },
     {
       maxResendRequests: 0,
-      initialPollMaxAttempts: 10,
-      pollAttemptPlan: [10, 10, 10],
+      initialPollMaxAttempts: 5,
+      pollAttemptPlan: [2, 3, 15],
       requestFreshCodeFirst: false,
       filterAfterTimestamp: 123,
       resendIntervalMs: 0,
     }
   );
 
-  assert.deepStrictEqual(pollMaxAttempts, [1, 1]);
+  assert.deepStrictEqual(pollMaxAttempts, [2, 15]);
   assert.deepStrictEqual(submittedCodes, ['111111', '222222']);
 });
 
@@ -1205,8 +1120,8 @@ test('verification flow resends and waits five seconds after a rejected 2925 log
       maxResendRequests: 0,
       maxSubmitAttempts: 5,
       invalidCodeResendDelayMs: 5000,
-      initialPollMaxAttempts: 10,
-      pollAttemptPlan: [10, 10, 10],
+      initialPollMaxAttempts: 5,
+      pollAttemptPlan: [2, 3, 15],
       requestFreshCodeFirst: false,
       filterAfterTimestamp: 123,
       resendIntervalMs: 0,
@@ -1214,16 +1129,14 @@ test('verification flow resends and waits five seconds after a rejected 2925 log
   );
 
   assert.deepStrictEqual(events, [
-    ['sleep', 10000],
     ['poll', '111111'],
     ['submit', '111111'],
     ['resend', 8],
     ['sleep', 5000],
-    ['sleep', 10000],
     ['poll', '222222'],
     ['submit', '222222'],
   ]);
-  assert.deepStrictEqual(sleeps, [10000, 5000, 10000]);
+  assert.deepStrictEqual(sleeps, [5000]);
   assert.deepStrictEqual(pollPayloads[1].excludeCodes, ['111111']);
   assert.equal(completed[0].code, '222222');
 });
@@ -1374,12 +1287,10 @@ test('verification flow keeps 2925 invalid-code retry in place when resend respo
   );
 
   assert.deepStrictEqual(events, [
-    ['sleep', 10000],
     ['poll', '111111'],
     ['submit', '111111'],
     ['resend', 8],
     ['sleep', 5000],
-    ['sleep', 10000],
     ['poll', '222222'],
     ['submit', '222222'],
   ]);
@@ -1442,7 +1353,7 @@ test('verification flow gives up after five rejected 2925 login codes', async ()
 
   assert.deepStrictEqual(submittedCodes, ['111111', '222222', '333333', '444444', '555555']);
   assert.deepStrictEqual(resends, [8, 8, 8, 8]);
-  assert.deepStrictEqual(sleeps, [10000, 5000, 10000, 5000, 10000, 5000, 10000, 5000, 10000]);
+  assert.deepStrictEqual(sleeps, [5000, 5000, 5000, 5000]);
 });
 
 test('step 8 executor applies 2925 invalid-code retry settings to all login-code entry points', () => {
@@ -1471,8 +1382,8 @@ test('verification flow keeps Hotmail request timestamp filtering on the first p
     HOTMAIL_PROVIDER: 'hotmail-api',
     isStopError: () => false,
     LUCKMAIL_PROVIDER: 'luckmail-api',
-    MAIL_2925_VERIFICATION_INTERVAL_MS: 10000,
-    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 10,
+    MAIL_2925_VERIFICATION_INTERVAL_MS: 15000,
+    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 15,
     pollCloudflareTempEmailVerificationCode: async () => ({}),
     pollHotmailVerificationCode: async (_step, _state, payload) => {
       pollPayloads.push(payload);
@@ -1526,8 +1437,8 @@ test('verification flow keeps fixed filter timestamp after step 4 resend', async
     HOTMAIL_PROVIDER: 'hotmail-api',
     isStopError: () => false,
     LUCKMAIL_PROVIDER: 'luckmail-api',
-    MAIL_2925_VERIFICATION_INTERVAL_MS: 10000,
-    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 10,
+    MAIL_2925_VERIFICATION_INTERVAL_MS: 15000,
+    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 15,
     pollCloudflareTempEmailVerificationCode: async () => ({}),
     pollHotmailVerificationCode: async (_step, _state, payload) => {
       pollPayloads.push(payload);
@@ -1592,8 +1503,8 @@ test('verification flow uses configured signup resend count for step 4', async (
     HOTMAIL_PROVIDER: 'hotmail-api',
     isStopError: () => false,
     LUCKMAIL_PROVIDER: 'luckmail-api',
-    MAIL_2925_VERIFICATION_INTERVAL_MS: 10000,
-    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 10,
+    MAIL_2925_VERIFICATION_INTERVAL_MS: 15000,
+    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 15,
     pollCloudflareTempEmailVerificationCode: async () => ({}),
     pollHotmailVerificationCode: async () => ({}),
     pollLuckmailVerificationCode: async () => ({}),
@@ -1651,8 +1562,8 @@ test('verification flow uses configured login resend count for step 8', async ()
     HOTMAIL_PROVIDER: 'hotmail-api',
     isStopError: () => false,
     LUCKMAIL_PROVIDER: 'luckmail-api',
-    MAIL_2925_VERIFICATION_INTERVAL_MS: 10000,
-    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 10,
+    MAIL_2925_VERIFICATION_INTERVAL_MS: 15000,
+    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 15,
     pollCloudflareTempEmailVerificationCode: async () => ({}),
     pollHotmailVerificationCode: async () => ({}),
     pollLuckmailVerificationCode: async () => ({}),
@@ -1712,8 +1623,8 @@ test('verification flow can complete Plus visible login-code step with shared st
     HOTMAIL_PROVIDER: 'hotmail-api',
     isStopError: () => false,
     LUCKMAIL_PROVIDER: 'luckmail-api',
-    MAIL_2925_VERIFICATION_INTERVAL_MS: 10000,
-    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 10,
+    MAIL_2925_VERIFICATION_INTERVAL_MS: 15000,
+    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 15,
     pollCloudflareTempEmailVerificationCode: async () => ({}),
     pollHotmailVerificationCode: async () => ({}),
     pollLuckmailVerificationCode: async () => ({}),
@@ -1773,8 +1684,8 @@ test('verification flow waits during resend cooldown instead of tight-looping', 
     HOTMAIL_PROVIDER: 'hotmail-api',
     isStopError: () => false,
     LUCKMAIL_PROVIDER: 'luckmail-api',
-    MAIL_2925_VERIFICATION_INTERVAL_MS: 10000,
-    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 10,
+    MAIL_2925_VERIFICATION_INTERVAL_MS: 15000,
+    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 15,
     pollCloudflareTempEmailVerificationCode: async () => ({}),
     pollHotmailVerificationCode: async () => ({}),
     pollLuckmailVerificationCode: async () => ({}),
@@ -1834,8 +1745,8 @@ test('verification flow clicks resend before waiting for the next LuckMail /code
     HOTMAIL_PROVIDER: 'hotmail-api',
     isStopError: () => false,
     LUCKMAIL_PROVIDER: 'luckmail-api',
-    MAIL_2925_VERIFICATION_INTERVAL_MS: 10000,
-    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 10,
+    MAIL_2925_VERIFICATION_INTERVAL_MS: 15000,
+    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 15,
     pollCloudflareTempEmailVerificationCode: async () => ({}),
     pollHotmailVerificationCode: async () => ({}),
     pollLuckmailVerificationCode: async (_step, _state, payload) => {
@@ -1904,8 +1815,8 @@ test('verification flow notifies onResendRequestedAt when resend is triggered', 
     HOTMAIL_PROVIDER: 'hotmail-api',
     isStopError: () => false,
     LUCKMAIL_PROVIDER: 'luckmail-api',
-    MAIL_2925_VERIFICATION_INTERVAL_MS: 10000,
-    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 10,
+    MAIL_2925_VERIFICATION_INTERVAL_MS: 15000,
+    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 15,
     pollCloudflareTempEmailVerificationCode: async () => ({}),
     pollHotmailVerificationCode: async () => ({}),
     pollLuckmailVerificationCode: async () => ({}),
@@ -1977,8 +1888,8 @@ test('verification flow uses resilient openai-auth transport when submitting ver
     HOTMAIL_PROVIDER: 'hotmail-api',
     isStopError: () => false,
     LUCKMAIL_PROVIDER: 'luckmail-api',
-    MAIL_2925_VERIFICATION_INTERVAL_MS: 10000,
-    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 10,
+    MAIL_2925_VERIFICATION_INTERVAL_MS: 15000,
+    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 15,
     pollCloudflareTempEmailVerificationCode: async () => ({}),
     pollHotmailVerificationCode: async () => ({}),
     pollLuckmailVerificationCode: async () => ({}),
@@ -2028,8 +1939,8 @@ test('verification flow does not replay step 8 code submit after transient auth-
     isRetryableContentScriptTransportError: (error) => /did not respond/i.test(String(error?.message || error || '')),
     isStopError: () => false,
     LUCKMAIL_PROVIDER: 'luckmail-api',
-    MAIL_2925_VERIFICATION_INTERVAL_MS: 10000,
-    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 10,
+    MAIL_2925_VERIFICATION_INTERVAL_MS: 15000,
+    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 15,
     pollCloudflareTempEmailVerificationCode: async () => ({}),
     pollHotmailVerificationCode: async () => ({}),
     pollLuckmailVerificationCode: async () => ({}),
@@ -2093,8 +2004,8 @@ test('verification flow forwards dynamic completion node id when submitting boun
     HOTMAIL_PROVIDER: 'hotmail-api',
     isStopError: () => false,
     LUCKMAIL_PROVIDER: 'luckmail-api',
-    MAIL_2925_VERIFICATION_INTERVAL_MS: 10000,
-    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 10,
+    MAIL_2925_VERIFICATION_INTERVAL_MS: 15000,
+    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 15,
     pollCloudflareTempEmailVerificationCode: async () => ({}),
     pollHotmailVerificationCode: async () => ({}),
     pollLuckmailVerificationCode: async () => ({}),
@@ -2141,8 +2052,8 @@ test('verification flow keeps step 8 code submit response timeout above local fl
     HOTMAIL_PROVIDER: 'hotmail-api',
     isStopError: () => false,
     LUCKMAIL_PROVIDER: 'luckmail-api',
-    MAIL_2925_VERIFICATION_INTERVAL_MS: 10000,
-    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 10,
+    MAIL_2925_VERIFICATION_INTERVAL_MS: 15000,
+    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 15,
     pollCloudflareTempEmailVerificationCode: async () => ({}),
     pollHotmailVerificationCode: async () => ({}),
     pollLuckmailVerificationCode: async () => ({}),
@@ -2196,8 +2107,8 @@ test('verification flow requests a new code immediately after Cloudflare Temp Em
     HOTMAIL_PROVIDER: 'hotmail-api',
     isStopError: () => false,
     LUCKMAIL_PROVIDER: 'luckmail-api',
-    MAIL_2925_VERIFICATION_INTERVAL_MS: 10000,
-    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 10,
+    MAIL_2925_VERIFICATION_INTERVAL_MS: 15000,
+    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 15,
     pollCloudflareTempEmailVerificationCode: async (_step, _state, payload) => {
       pollPayloads.push(payload);
       const code = pollPayloads.length === 1 ? '111111' : '222222';
@@ -2273,8 +2184,8 @@ test('verification flow forwards optional signup profile payload when submitting
     HOTMAIL_PROVIDER: 'hotmail-api',
     isStopError: () => false,
     LUCKMAIL_PROVIDER: 'luckmail-api',
-    MAIL_2925_VERIFICATION_INTERVAL_MS: 10000,
-    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 10,
+    MAIL_2925_VERIFICATION_INTERVAL_MS: 15000,
+    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 15,
     pollCloudflareTempEmailVerificationCode: async () => ({}),
     pollHotmailVerificationCode: async () => ({}),
     pollLuckmailVerificationCode: async () => ({}),
@@ -2336,8 +2247,8 @@ test('verification flow keeps combined signup profile skip reason when completin
     HOTMAIL_PROVIDER: 'hotmail-api',
     isStopError: () => false,
     LUCKMAIL_PROVIDER: 'luckmail-api',
-    MAIL_2925_VERIFICATION_INTERVAL_MS: 10000,
-    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 10,
+    MAIL_2925_VERIFICATION_INTERVAL_MS: 15000,
+    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 15,
     pollCloudflareTempEmailVerificationCode: async () => ({}),
     pollHotmailVerificationCode: async () => ({}),
     pollLuckmailVerificationCode: async () => ({}),
@@ -2417,8 +2328,8 @@ test('verification flow treats retryable submit transport failure as success whe
     isRetryableContentScriptTransportError: (error) => /message channel is closed/i.test(String(error?.message || error || '')),
     isStopError: () => false,
     LUCKMAIL_PROVIDER: 'luckmail-api',
-    MAIL_2925_VERIFICATION_INTERVAL_MS: 10000,
-    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 10,
+    MAIL_2925_VERIFICATION_INTERVAL_MS: 15000,
+    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 15,
     pollCloudflareTempEmailVerificationCode: async () => ({}),
     pollHotmailVerificationCode: async () => ({}),
     pollLuckmailVerificationCode: async () => ({}),
@@ -2466,8 +2377,8 @@ test('verification flow avoids resend storms when iCloud polling keeps hitting t
     HOTMAIL_PROVIDER: 'hotmail-api',
     isStopError: () => false,
     LUCKMAIL_PROVIDER: 'luckmail-api',
-    MAIL_2925_VERIFICATION_INTERVAL_MS: 10000,
-    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 10,
+    MAIL_2925_VERIFICATION_INTERVAL_MS: 15000,
+    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 15,
     pollCloudflareTempEmailVerificationCode: async () => ({}),
     pollHotmailVerificationCode: async () => ({}),
     pollLuckmailVerificationCode: async () => ({}),
@@ -2529,8 +2440,8 @@ test('verification flow stops iCloud poll-only loop after repeated no-code round
     HOTMAIL_PROVIDER: 'hotmail-api',
     isStopError: () => false,
     LUCKMAIL_PROVIDER: 'luckmail-api',
-    MAIL_2925_VERIFICATION_INTERVAL_MS: 10000,
-    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 10,
+    MAIL_2925_VERIFICATION_INTERVAL_MS: 15000,
+    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 15,
     pollCloudflareTempEmailVerificationCode: async () => ({}),
     pollHotmailVerificationCode: async () => ({}),
     pollLuckmailVerificationCode: async () => ({}),
@@ -2590,8 +2501,8 @@ test('verification flow derives iCloud polling response timeout from the configu
     HOTMAIL_PROVIDER: 'hotmail-api',
     isStopError: () => false,
     LUCKMAIL_PROVIDER: 'luckmail-api',
-    MAIL_2925_VERIFICATION_INTERVAL_MS: 10000,
-    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 10,
+    MAIL_2925_VERIFICATION_INTERVAL_MS: 15000,
+    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 15,
     pollCloudflareTempEmailVerificationCode: async () => ({}),
     pollHotmailVerificationCode: async () => ({}),
     pollLuckmailVerificationCode: async () => ({}),

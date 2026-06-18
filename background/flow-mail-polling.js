@@ -15,10 +15,7 @@
   function getMailPollingResponseTimeoutMs(payload = {}) {
     const maxAttempts = Math.max(1, Math.floor(Number(payload?.maxAttempts) || 1));
     const intervalMs = Math.max(1, Number(payload?.intervalMs) || 3000);
-    const mail2925CodeLoadRounds = Math.max(0, Math.floor(Number(payload?.mail2925CodeLoadRounds) || 0));
-    const mail2925CodeLoadTimeoutMs = Math.max(0, Number(payload?.mail2925CodeLoadTimeoutMs) || 0);
-    const mail2925CodeLoadBudgetMs = mail2925CodeLoadRounds * mail2925CodeLoadTimeoutMs;
-    return Math.max(45000, maxAttempts * intervalMs + mail2925CodeLoadBudgetMs + ICLOUD_MAIL_POLL_TIMEOUT_MARGIN_MS);
+    return Math.max(45000, maxAttempts * intervalMs + ICLOUD_MAIL_POLL_TIMEOUT_MARGIN_MS);
   }
 
   function isIcloudMail(mail = {}) {

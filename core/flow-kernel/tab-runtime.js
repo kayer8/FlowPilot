@@ -602,10 +602,7 @@
       if (message.type === 'POLL_EMAIL') {
         const maxAttempts = Math.max(1, Number(message.payload?.maxAttempts) || 1);
         const intervalMs = Math.max(0, Number(message.payload?.intervalMs) || 0);
-        const mail2925CodeLoadRounds = Math.max(0, Number(message.payload?.mail2925CodeLoadRounds) || 0);
-        const mail2925CodeLoadTimeoutMs = Math.max(0, Number(message.payload?.mail2925CodeLoadTimeoutMs) || 0);
-        const mail2925CodeLoadBudgetMs = mail2925CodeLoadRounds * mail2925CodeLoadTimeoutMs;
-        return Math.max(45000, maxAttempts * intervalMs + mail2925CodeLoadBudgetMs + 25000);
+        return Math.max(45000, maxAttempts * intervalMs + 25000);
       }
       if (message.type === 'FILL_CODE') return Number(message.step) === 7 ? 45000 : 30000;
       if (message.type === 'PREPARE_SIGNUP_VERIFICATION') return 45000;

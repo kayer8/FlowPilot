@@ -81,8 +81,8 @@
   function createGrokMailRules(deps = {}) {
     const {
       LUCKMAIL_PROVIDER = 'luckmail-api',
-      MAIL_2925_VERIFICATION_INTERVAL_MS = 10000,
-      MAIL_2925_VERIFICATION_MAX_ATTEMPTS = 10,
+      MAIL_2925_VERIFICATION_INTERVAL_MS = 15000,
+      MAIL_2925_VERIFICATION_MAX_ATTEMPTS = 15,
     } = deps;
 
     function getRuleDefinition(_input, state = {}) {
@@ -112,11 +112,6 @@
         intervalMs: luckmailProvider
           ? 15000
           : (mail2925Provider ? MAIL_2925_VERIFICATION_INTERVAL_MS : 5000),
-        ...(mail2925Provider ? {
-          mail2925CodeLoadRounds: 3,
-          mail2925CodeLoadTimeoutMs: 60000,
-          mail2925CodeLoadCheckIntervalMs: 5000,
-        } : {}),
       };
     }
 

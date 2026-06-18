@@ -19,8 +19,8 @@ test('mail rule registry exposes canonical OpenAI verification poll payloads', (
 
   const openAiMailRules = openAiApi.createOpenAiMailRules({
     getHotmailVerificationRequestTimestamp: (step) => (step === 4 ? 123 : 456),
-    MAIL_2925_VERIFICATION_INTERVAL_MS: 10000,
-    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 10,
+    MAIL_2925_VERIFICATION_INTERVAL_MS: 15000,
+    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 15,
   });
   const registry = registryApi.createMailRuleRegistry({
     defaultFlowId: 'openai',
@@ -67,11 +67,8 @@ test('mail rule registry exposes canonical OpenAI verification poll payloads', (
       targetEmail: 'user@example.com',
       targetEmailHints: ['user@example.com', 'user=example.com'],
       mail2925MatchTargetEmail: true,
-      maxAttempts: 10,
-      intervalMs: 10000,
-      mail2925CodeLoadRounds: 3,
-      mail2925CodeLoadTimeoutMs: 60000,
-      mail2925CodeLoadCheckIntervalMs: 5000,
+      maxAttempts: 15,
+      intervalMs: 15000,
       excludeCodes: ['111111'],
     }
   );
@@ -216,9 +213,6 @@ test('mail rule registry exposes Kiro AWS verification poll payloads by node', (
       mail2925MatchTargetEmail: true,
       maxAttempts: 17,
       intervalMs: 16000,
-      mail2925CodeLoadRounds: 3,
-      mail2925CodeLoadTimeoutMs: 60000,
-      mail2925CodeLoadCheckIntervalMs: 5000,
     }
   );
 
@@ -308,9 +302,6 @@ test('mail rule registry exposes Grok xAI verification poll payloads by node', (
       mail2925MatchTargetEmail: true,
       maxAttempts: 17,
       intervalMs: 16000,
-      mail2925CodeLoadRounds: 3,
-      mail2925CodeLoadTimeoutMs: 60000,
-      mail2925CodeLoadCheckIntervalMs: 5000,
     }
   );
 
