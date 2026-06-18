@@ -553,52 +553,65 @@
         throw new Error(mail.error);
       }
       if (typeof ensureMail2925MailboxSession !== 'function' || typeof sendToMailContentScriptResilient !== 'function') {
-        throw new Error(`步骤 ${visibleStep}：当前缺少 2925 邮箱清空能力，无法在绑定邮箱前清空收件箱。`);
+        await addLog(`步骤 ${visibleStep}：当前缺少 2925 邮箱清空能力，将跳过清空收件箱并继续绑定邮箱。`, 'warn', {
+          step: visibleStep,
+          stepKey: 'bind-email',
+        });
+        return;
       }
 
       await addLog(`步骤 ${visibleStep}：绑定邮箱前正在打开 2925 邮箱并清空收件箱。`, 'warn', {
         step: visibleStep,
         stepKey: 'bind-email',
       });
-      const ensure2925Session = typeof reopenMail2925MailboxSession === 'function'
-        ? reopenMail2925MailboxSession
-        : ensureMail2925MailboxSession;
-      await ensure2925Session({
-        accountId: latestState?.currentMail2925AccountId || null,
-        step: visibleStep,
-        forceRelogin: false,
-        allowLoginWhenOnLoginPage: Boolean(latestState?.mail2925UseAccountPool),
-        expectedMailboxEmail: getExpectedMail2925MailboxEmail(latestState),
-        actionLabel: `Step ${visibleStep}: clear 2925 inbox before bind email`,
-      });
-
-      const result = await sendToMailContentScriptResilient(
-        mail,
-        {
-          type: 'DELETE_ALL_EMAILS',
+      try {
+        const ensure2925Session = typeof reopenMail2925MailboxSession === 'function'
+          ? reopenMail2925MailboxSession
+          : ensureMail2925MailboxSession;
+        await ensure2925Session({
+          accountId: latestState?.currentMail2925AccountId || null,
           step: visibleStep,
-          source: 'background',
-          payload: {},
-        },
-        {
-          timeoutMs: 60000,
-          responseTimeoutMs: 60000,
-          maxRecoveryAttempts: 2,
-          logStep: visibleStep,
-          logStepKey: 'bind-email',
-        }
-      );
+          forceRelogin: false,
+          allowLoginWhenOnLoginPage: Boolean(latestState?.mail2925UseAccountPool),
+          expectedMailboxEmail: getExpectedMail2925MailboxEmail(latestState),
+          actionLabel: `Step ${visibleStep}: clear 2925 inbox before bind email`,
+        });
 
-      if (result?.error) {
-        throw new Error(result.error);
-      }
-      const inboxAlreadyEmpty = result?.empty === true
-        || result?.alreadyEmpty === true
-        || result?.noMessages === true
-        || result?.noMail === true
-        || result?.messageCount === 0;
-      if (result?.deleted === false && !inboxAlreadyEmpty) {
-        throw new Error(`步骤 ${visibleStep}：绑定邮箱前未能确认 2925 收件箱已清空。`);
+        const result = await sendToMailContentScriptResilient(
+          mail,
+          {
+            type: 'DELETE_ALL_EMAILS',
+            step: visibleStep,
+            source: 'background',
+            payload: {},
+          },
+          {
+            timeoutMs: 60000,
+            responseTimeoutMs: 60000,
+            maxRecoveryAttempts: 2,
+            logStep: visibleStep,
+            logStepKey: 'bind-email',
+          }
+        );
+
+        if (result?.error) {
+          throw new Error(result.error);
+        }
+        const inboxAlreadyEmpty = result?.empty === true
+          || result?.alreadyEmpty === true
+          || result?.noMessages === true
+          || result?.noMail === true
+          || result?.messageCount === 0;
+        if (result?.deleted === false && !inboxAlreadyEmpty) {
+          throw new Error(`步骤 ${visibleStep}：绑定邮箱前未能确认 2925 收件箱已清空。`);
+        }
+      } catch (error) {
+        const cleanupErrorMessage = String(error?.message || error || '未知错误');
+        await addLog(`步骤 ${visibleStep}：绑定邮箱前清空 2925 收件箱失败，已跳过清空并继续提交绑定邮箱。原因：${cleanupErrorMessage}`, 'warn', {
+          step: visibleStep,
+          stepKey: 'bind-email',
+        });
+        return;
       }
       await addLog(`步骤 ${visibleStep}：2925 收件箱已清空，开始提交绑定邮箱。`, 'info', {
         step: visibleStep,
