@@ -801,8 +801,10 @@ function getCurrentMailIds(items = []) {
 
 function matchesMailFilters(text, senderFilters, subjectFilters) {
   const lower = String(text || '').toLowerCase();
-  const senderMatch = senderFilters.some((filter) => lower.includes(String(filter || '').toLowerCase()));
-  const subjectMatch = subjectFilters.some((filter) => lower.includes(String(filter || '').toLowerCase()));
+  const senderList = Array.isArray(senderFilters) ? senderFilters : [];
+  const subjectList = Array.isArray(subjectFilters) ? subjectFilters : [];
+  const senderMatch = senderList.some((filter) => lower.includes(String(filter || '').toLowerCase()));
+  const subjectMatch = subjectList.some((filter) => lower.includes(String(filter || '').toLowerCase()));
   return senderMatch || subjectMatch;
 }
 
@@ -1527,6 +1529,13 @@ async function refreshInbox() {
   }
 }
 
+async function refreshInboxAfterDiscardedFirstMail(step) {
+  await returnToInbox();
+  await refreshInbox();
+  await sleep(5000);
+  log(`步骤 ${step}：第一封邮件没有可用验证码，已返回收件箱刷新并等待 5 秒，继续读取刷新后的第一封邮件。`, 'info');
+}
+
 async function waitForMail2925View(targetView, timeoutMs = 45000) {
   const startedAt = Date.now();
   while (Date.now() - startedAt <= timeoutMs) {
@@ -1704,13 +1713,16 @@ async function handlePollEmail(step, payload) {
 
   log(`步骤 ${step}：邮件列表已加载，共 ${initialItems.length} 封邮件`);
 
+  let nextAttemptAlreadyRefreshed = false;
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     if (typeof throwIfMail2925LimitReached === 'function') {
       throwIfMail2925LimitReached();
     }
     log(`步骤 ${step}：正在轮询 2925 邮箱，第 ${attempt}/${maxAttempts} 次`);
 
-    if (attempt > 1 || !initialLoadUsedRefresh) {
+    if (nextAttemptAlreadyRefreshed) {
+      nextAttemptAlreadyRefreshed = false;
+    } else if (attempt > 1 || !initialLoadUsedRefresh) {
       await returnToInbox();
       await refreshInbox();
       await sleepRandom(900, 1500);
@@ -1723,59 +1735,60 @@ async function handlePollEmail(step, payload) {
     const items = mailbox.items;
     let shouldRefreshImmediately = false;
     if (items.length > 0) {
-      for (let index = 0; index < items.length; index += 1) {
-        const item = items[index];
-        const itemTimestamp = parseMailItemTimestamp(item);
-        const itemMinute = normalizeMinuteTimestamp(itemTimestamp || 0);
+      const item = items[0];
+      const itemTimestamp = parseMailItemTimestamp(item);
+      const itemMinute = normalizeMinuteTimestamp(itemTimestamp || 0);
+      const previewText = getMailItemText(item);
+      const previewCode = extractVerificationCode(previewText, {
+        codePatterns,
+        requireContext: true,
+      });
+      const openedText = await openMailAndDeleteAfterRead(item, step);
+      const bodyCode = extractVerificationCode(openedText, {
+        codePatterns,
+        requireContext: true,
+      });
+      const candidateCode = bodyCode || previewCode;
+      const filterValues = [
+        ...(Array.isArray(senderFilters) ? senderFilters : []),
+        ...(Array.isArray(subjectFilters) ? subjectFilters : []),
+      ];
+      const hasMailFilters = filterValues
+        .some((filter) => String(filter || '').trim());
+      const filterMatches = !hasMailFilters
+        || matchesMailFilters(previewText, senderFilters, subjectFilters)
+        || matchesMailFilters(openedText, senderFilters, subjectFilters);
+      const previewTargetState = mail2925MatchTargetEmail
+        ? getTargetEmailMatchState(previewText, targetEmail, { targetEmailHints })
+        : { matches: true, hasExplicitEmail: false };
+      const openedTargetState = mail2925MatchTargetEmail
+        ? getTargetEmailMatchState(openedText, targetEmail, { targetEmailHints })
+        : { matches: true, hasExplicitEmail: false };
+      const targetMismatch = mail2925MatchTargetEmail
+        && (
+          (previewTargetState.hasExplicitEmail && !previewTargetState.matches)
+          || (openedTargetState.hasExplicitEmail && !openedTargetState.matches)
+        );
+      let discardReason = '';
 
-        if (filterAfterMinute && (!itemMinute || itemMinute < filterAfterMinute)) {
-          continue;
-        }
+      if (filterAfterMinute && (!itemMinute || itemMinute < filterAfterMinute)) {
+        discardReason = '邮件时间早于本轮验证码窗口';
+      } else if (!filterMatches) {
+        discardReason = '发件人或主题不匹配';
+      } else if (targetMismatch) {
+        discardReason = '收件邮箱不匹配';
+      } else if (!candidateCode) {
+        discardReason = '正文和预览都没有验证码';
+      } else if (excludedCodeSet.has(candidateCode)) {
+        discardReason = `验证码已被排除：${candidateCode}`;
+      } else if (seenCodes.has(candidateCode)) {
+        discardReason = `验证码已处理过：${candidateCode}`;
+      }
 
-        const previewText = getMailItemText(item);
-        if (!matchesMailFilters(previewText, senderFilters, subjectFilters)) {
-          continue;
-        }
-        const previewTargetState = mail2925MatchTargetEmail
-          ? getTargetEmailMatchState(previewText, targetEmail, { targetEmailHints })
-          : { matches: true, hasExplicitEmail: false };
-        if (mail2925MatchTargetEmail && previewTargetState.hasExplicitEmail && !previewTargetState.matches) {
-          continue;
-        }
-
-        const previewCode = extractVerificationCode(previewText, {
-          codePatterns,
-          requireContext: true,
-        });
-        const openedText = await openMailAndDeleteAfterRead(item, step);
-        const openedTargetState = mail2925MatchTargetEmail
-          ? getTargetEmailMatchState(openedText, targetEmail, { targetEmailHints })
-          : { matches: true, hasExplicitEmail: false };
-        if (mail2925MatchTargetEmail && openedTargetState.hasExplicitEmail && !openedTargetState.matches) {
-          continue;
-        }
-        const bodyCode = extractVerificationCode(openedText, {
-          codePatterns,
-          requireContext: true,
-        });
-        const candidateCode = bodyCode || previewCode;
-
-        if (!candidateCode) {
-          shouldRefreshImmediately = true;
-          continue;
-        }
-
-        if (excludedCodeSet.has(candidateCode)) {
-          shouldRefreshImmediately = true;
-          log(`步骤 ${step}：跳过排除的验证码：${candidateCode}`, 'info');
-          continue;
-        }
-        if (seenCodes.has(candidateCode)) {
-          shouldRefreshImmediately = true;
-          log(`步骤 ${step}：跳过已处理过的验证码：${candidateCode}`, 'info');
-          continue;
-        }
-
+      if (discardReason) {
+        shouldRefreshImmediately = true;
+        log(`步骤 ${step}：第一封邮件未命中可用验证码（${discardReason}），已按当前邮件处理后准备刷新收件箱。`, 'info');
+      } else {
         seenCodes.add(candidateCode);
         persistSeenCodes();
         const source = bodyCode ? '邮件正文' : '邮件预览';
@@ -1786,7 +1799,8 @@ async function handlePollEmail(step, payload) {
     }
 
     if (shouldRefreshImmediately && attempt < maxAttempts) {
-      log(`Step ${step}: opened a matching 2925 mail without a usable code; refreshing inbox immediately.`, 'info');
+      await refreshInboxAfterDiscardedFirstMail(step);
+      nextAttemptAlreadyRefreshed = true;
       continue;
     }
 

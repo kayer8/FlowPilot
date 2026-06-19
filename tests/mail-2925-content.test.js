@@ -148,6 +148,7 @@ function buildExtractVerificationCodeBundle() {
 test('handlePollEmail establishes a baseline after opening from detail view and only picks mail from a later refresh', async () => {
   const bundle = [
     extractFunction('normalizeMinuteTimestamp'),
+    extractFunction('refreshInboxAfterDiscardedFirstMail'),
     extractFunction('handlePollEmail'),
   ].join('\n');
 
@@ -261,6 +262,7 @@ return {
 test('handlePollEmail refreshes immediately after a matching 2925 mail has no code', async () => {
   const bundle = [
     extractFunction('normalizeMinuteTimestamp'),
+    extractFunction('refreshInboxAfterDiscardedFirstMail'),
     extractFunction('handlePollEmail'),
   ].join('\n');
 
@@ -268,6 +270,7 @@ test('handlePollEmail refreshes immediately after a matching 2925 mail has no co
 let state = 'empty';
 let refreshCalls = 0;
 let longSleepCalls = 0;
+let discardWaitCalls = 0;
 const readAndDeleteCalls = [];
 const seenCodes = new Set();
 const firstMail = { id: 'first', text: 'OpenAI security notice without code' };
@@ -305,7 +308,11 @@ function extractVerificationCode(text) {
   return match ? match[1] : null;
 }
 
-async function sleep() {}
+async function sleep(ms = 0) {
+  if (ms === 5000) {
+    discardWaitCalls += 1;
+  }
+}
 async function sleepRandom(minMs) {
   if (minMs >= 10000) {
     longSleepCalls += 1;
@@ -345,6 +352,9 @@ return {
   getLongSleepCalls() {
     return longSleepCalls;
   },
+  getDiscardWaitCalls() {
+    return discardWaitCalls;
+  },
   getReadAndDeleteCalls() {
     return readAndDeleteCalls.slice();
   },
@@ -361,12 +371,14 @@ return {
   assert.equal(result.code, '778899');
   assert.equal(api.getRefreshCalls(), 2);
   assert.equal(api.getLongSleepCalls(), 0);
+  assert.equal(api.getDiscardWaitCalls(), 1);
   assert.deepEqual(api.getReadAndDeleteCalls(), ['first', 'second']);
 });
 
 test('handlePollEmail keeps ignoring targetEmail when receive-mode matching is disabled', async () => {
   const bundle = [
     extractFunction('normalizeMinuteTimestamp'),
+    extractFunction('refreshInboxAfterDiscardedFirstMail'),
     extractFunction('handlePollEmail'),
   ].join('\n');
 
@@ -461,6 +473,7 @@ test('handlePollEmail skips explicit mismatched target emails when receive-mode 
     extractFunction('emailMatchesTarget'),
     extractFunction('getTargetEmailMatchState'),
     extractFunction('normalizeMinuteTimestamp'),
+    extractFunction('refreshInboxAfterDiscardedFirstMail'),
     extractFunction('handlePollEmail'),
   ].join('\n');
 
@@ -468,6 +481,7 @@ test('handlePollEmail skips explicit mismatched target emails when receive-mode 
 let state = 'ready';
 const seenCodes = new Set();
 const readAndDeleteCalls = [];
+const deletedMailIds = new Set();
 const mismatchMail = {
   id: 'mail-1',
   text: 'ChatGPT verification code 112233 for another.user@example.com',
@@ -478,7 +492,10 @@ const targetMail = {
 };
 
 function findMailItems() {
-  return state === 'ready' ? [mismatchMail, targetMail] : [];
+  if (state !== 'ready') {
+    return [];
+  }
+  return [mismatchMail, targetMail].filter((item) => !deletedMailIds.has(item.id));
 }
 
 function getMailItemId(item) {
@@ -519,6 +536,7 @@ async function refreshInbox() {}
 
 async function openMailAndDeleteAfterRead(item) {
   readAndDeleteCalls.push(item.id);
+  deletedMailIds.add(item.id);
   return item.text;
 }
 
@@ -539,14 +557,14 @@ return {
   const result = await api.handlePollEmail(8, {
     senderFilters: ['chatgpt'],
     subjectFilters: ['verification'],
-    maxAttempts: 1,
+    maxAttempts: 2,
     intervalMs: 1,
     targetEmail: 'expected@example.com',
     mail2925MatchTargetEmail: true,
   });
 
   assert.equal(result.code, '445566');
-  assert.deepEqual(api.getReadAndDeleteCalls(), ['mail-2']);
+  assert.deepEqual(api.getReadAndDeleteCalls(), ['mail-1', 'mail-2']);
 });
 
 test('getTargetEmailMatchState decodes generic forwarded bounce aliases without OpenAI-specific domains', () => {
@@ -580,6 +598,7 @@ return { getTargetEmailMatchState };
 test('handlePollEmail only accepts 2925 mails inside the fixed lookback window', async () => {
   const bundle = [
     extractFunction('normalizeMinuteTimestamp'),
+    extractFunction('refreshInboxAfterDiscardedFirstMail'),
     extractFunction('handlePollEmail'),
   ].join('\n');
 
@@ -587,6 +606,7 @@ test('handlePollEmail only accepts 2925 mails inside the fixed lookback window',
 let state = 'ready';
 const seenCodes = new Set();
 const readAndDeleteCalls = [];
+const deletedMailIds = new Set();
 const oldMail = {
   id: 'mail-old',
   text: 'OpenAI verification code 111111',
@@ -599,7 +619,10 @@ const windowMail = {
 };
 
 function findMailItems() {
-  return state === 'ready' ? [oldMail, windowMail] : [];
+  if (state !== 'ready') {
+    return [];
+  }
+  return [oldMail, windowMail].filter((item) => !deletedMailIds.has(item.id));
 }
 
 function getMailItemId(item) {
@@ -640,6 +663,7 @@ async function refreshInbox() {}
 
 async function openMailAndDeleteAfterRead(item) {
   readAndDeleteCalls.push(item.id);
+  deletedMailIds.add(item.id);
   return item.text;
 }
 
@@ -660,13 +684,13 @@ return {
   const result = await api.handlePollEmail(4, {
     senderFilters: ['openai'],
     subjectFilters: ['verification'],
-    maxAttempts: 1,
+    maxAttempts: 2,
     intervalMs: 1,
     filterAfterTimestamp: 120000,
   });
 
   assert.equal(result.code, '222222');
-  assert.deepEqual(api.getReadAndDeleteCalls(), ['mail-window']);
+  assert.deepEqual(api.getReadAndDeleteCalls(), ['mail-old', 'mail-window']);
 });
 
 test('ensureSeenCodesSession resets tried codes only when a new verification step session starts', async () => {
