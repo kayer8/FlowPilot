@@ -13739,6 +13739,7 @@ const step4Executor = self.MultiPageBackgroundStep4?.createStep4Executor({
   STANDARD_MAIL_VERIFICATION_RESEND_INTERVAL_MS,
   throwIfStopped,
   waitForTabStableComplete,
+  readAuthTabSnapshot,
   phoneVerificationHelpers,
   resolveSignupMethod,
 });

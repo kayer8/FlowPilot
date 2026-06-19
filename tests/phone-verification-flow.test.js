@@ -7032,7 +7032,7 @@ test('signup phone verification cancels activation when resend lands on Chinese 
   assert.equal(requests.filter((request) => request.searchParams.get('action') === 'getStatus').length, 1);
 });
 
-test('signup phone verification does not treat contact-verification URL-only snapshot as resend server error', async () => {
+test('signup phone verification treats contact-verification URL-only snapshot as resend server error', async () => {
   let resendAttempted = false;
   let currentState = {
     heroSmsApiKey: 'demo-key',
@@ -7103,8 +7103,8 @@ test('signup phone verification does not treat contact-verification URL-only sna
   await assert.rejects(
     () => helpers.completeSignupPhoneVerificationFlow(1, { state: currentState }),
     (error) => {
-      assert.doesNotMatch(error.message, /^PHONE_RESEND_SERVER_ERROR::/);
-      assert.match(error.message, /等待手机验证码超时/);
+      assert.match(error.message, /^PHONE_RESEND_SERVER_ERROR::OpenAI contact-verification/);
+      assert.match(error.message, /HTTP ERROR 500/);
       return true;
     }
   );

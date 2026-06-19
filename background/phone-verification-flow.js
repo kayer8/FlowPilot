@@ -1729,7 +1729,9 @@
         .trim();
       const titleText = String(snapshot?.title || '').replace(/\s+/g, ' ').trim();
       if (!bodyText) {
-        return isPhoneResendServerError(titleText) ? (titleText || 'OpenAI contact-verification 页面在重发短信后返回 HTTP ERROR 500。') : '';
+        return isPhoneResendServerError(titleText)
+          ? (titleText || 'OpenAI contact-verification 页面在重发短信后返回 HTTP ERROR 500。')
+          : 'OpenAI contact-verification 页面在重发短信后返回 HTTP ERROR 500。';
       }
       const combined = [
         bodyText,
@@ -7244,6 +7246,7 @@
       completeSignupPhoneVerificationFlow,
       finalizeLoginPhoneActivationAfterSuccess,
       finalizeSignupPhoneActivationAfterSuccess,
+      getPhoneResendServerErrorFromSnapshot,
       isPhoneResendBannedNumberError,
       isPhoneResendServerError,
       normalizeActivation,

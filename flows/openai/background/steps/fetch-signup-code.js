@@ -29,9 +29,14 @@
       STANDARD_MAIL_VERIFICATION_RESEND_INTERVAL_MS,
       throwIfStopped,
       waitForTabStableComplete = null,
+      readAuthTabSnapshot = null,
       phoneVerificationHelpers = null,
       resolveSignupMethod = () => 'email',
     } = deps;
+
+    const PHONE_RESEND_SERVER_ERROR_PREFIX = 'PHONE_RESEND_SERVER_ERROR::';
+    const CONTACT_VERIFICATION_SERVER_ERROR_FALLBACK = 'OpenAI contact-verification 页面返回 HTTP ERROR 500。';
+    const CONTACT_VERIFICATION_SERVER_ERROR_PATTERN = /this\s+page\s+isn['’]?t\s+working|该网页无法正常运作|currently\s+unable\s+to\s+handle\s+this\s+request|http\s+error\s+500|500\s+internal\s+server\s+error/i;
 
     function buildSignupProfileForVerificationStep() {
       const name = typeof generateRandomName === 'function' ? generateRandomName() : null;
@@ -66,6 +71,81 @@
       return resolveSignupMethod(state) === 'phone'
         || state?.accountIdentifierType === 'phone'
         || Boolean(state?.signupPhoneActivation);
+    }
+
+    function buildPhoneResendServerError(errorText = '') {
+      const message = String(errorText?.message || errorText || '').trim();
+      if (message.startsWith(PHONE_RESEND_SERVER_ERROR_PREFIX)) {
+        return new Error(message);
+      }
+      return new Error(`${PHONE_RESEND_SERVER_ERROR_PREFIX}${message || CONTACT_VERIFICATION_SERVER_ERROR_FALLBACK}`);
+    }
+
+    function getContactVerificationServerErrorFromSnapshot(snapshot = {}) {
+      if (typeof phoneVerificationHelpers?.getPhoneResendServerErrorFromSnapshot === 'function') {
+        return phoneVerificationHelpers.getPhoneResendServerErrorFromSnapshot(snapshot);
+      }
+
+      const rawUrl = String(snapshot?.url || snapshot?.href || '').trim();
+      if (!/\/contact-verification(?:[/?#]|$)/i.test(rawUrl)) {
+        return '';
+      }
+      const bodyText = [
+        snapshot?.text,
+        snapshot?.bodyText,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      const titleText = String(snapshot?.title || '').replace(/\s+/g, ' ').trim();
+      const combined = [
+        bodyText,
+        titleText,
+      ]
+        .filter(Boolean)
+        .join(' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      if (CONTACT_VERIFICATION_SERVER_ERROR_PATTERN.test(combined)) {
+        return combined || CONTACT_VERIFICATION_SERVER_ERROR_FALLBACK;
+      }
+      return bodyText ? '' : CONTACT_VERIFICATION_SERVER_ERROR_FALLBACK;
+    }
+
+    async function readContactVerificationServerErrorFromAuthTab(tabId) {
+      if (typeof readAuthTabSnapshot === 'function') {
+        try {
+          return getContactVerificationServerErrorFromSnapshot(await readAuthTabSnapshot(tabId));
+        } catch (_) {
+          return '';
+        }
+      }
+
+      if (typeof chrome?.tabs?.get !== 'function') {
+        return '';
+      }
+
+      try {
+        const tab = await chrome.tabs.get(tabId);
+        return getContactVerificationServerErrorFromSnapshot({
+          url: tab?.url,
+          title: tab?.title,
+          text: '',
+        });
+      } catch (_) {
+        return '';
+      }
+    }
+
+    async function throwContactVerificationServerErrorIfAuthTabShowsIt(tabId, phaseLabel = '') {
+      const serverErrorText = await readContactVerificationServerErrorFromAuthTab(tabId);
+      if (!serverErrorText) {
+        return;
+      }
+      const suffix = phaseLabel ? `（${phaseLabel}）` : '';
+      await addLog(`步骤 4：检测到 contact-verification 500 错误页${suffix}，当前轮直接重开。${serverErrorText}`, 'warn');
+      throw buildPhoneResendServerError(serverErrorText);
     }
 
     async function executeSignupPhoneCodeStep(state, signupTabId) {
@@ -206,6 +286,7 @@
         });
       }
       throwIfStopped();
+      await throwContactVerificationServerErrorIfAuthTabShowsIt(signupTabId, '开始前');
       await addLog('步骤 4：正在确认注册验证码页面是否就绪，必要时自动恢复密码页超时报错...');
 
       const prepareRequest = {
@@ -243,6 +324,7 @@
             throw error;
           }
 
+          await throwContactVerificationServerErrorIfAuthTabShowsIt(signupTabId, '认证页脚本无响应');
           const remainingMs = Math.max(0, prepareTimeoutMs - (Date.now() - prepareStartAt));
           if (remainingMs <= 0) {
             throw error;
@@ -269,6 +351,7 @@
           if (recoverResult?.error) {
             throw new Error(recoverResult.error);
           }
+          await throwContactVerificationServerErrorIfAuthTabShowsIt(signupTabId, '重试恢复后');
         }
       }
 

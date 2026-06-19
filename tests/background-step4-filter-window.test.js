@@ -457,3 +457,68 @@ test('step 4 prepare retries transport by recovering retry page without replayin
     true
   );
 });
+
+test('step 4 detects contact-verification HTTP 500 before prepare when content script is unavailable', async () => {
+  const logs = [];
+  let prepareCalls = 0;
+  let resolveCalls = 0;
+
+  const executor = api.createStep4Executor({
+    addLog: async (message, level) => {
+      logs.push({ message, level: level || 'info' });
+    },
+    chrome: {
+      tabs: {
+        update: async () => {},
+      },
+    },
+    completeNodeFromBackground: async () => {},
+    confirmCustomVerificationStepBypass: async () => {},
+    ensureMail2925MailboxSession: async () => {},
+    getMailConfig: () => ({
+      provider: '163',
+      label: '163 邮箱',
+      source: 'mail-163',
+      url: 'https://mail.163.com',
+    }),
+    getTabId: async () => 1,
+    HOTMAIL_PROVIDER: 'hotmail-api',
+    isTabAlive: async () => true,
+    LUCKMAIL_PROVIDER: 'luckmail-api',
+    CLOUDFLARE_TEMP_EMAIL_PROVIDER: 'cloudflare-temp-email',
+    readAuthTabSnapshot: async () => ({
+      url: 'https://auth.openai.com/contact-verification',
+      title: 'auth.openai.com',
+      text: '',
+    }),
+    resolveVerificationStep: async () => {
+      resolveCalls += 1;
+    },
+    reuseOrCreateTab: async () => {},
+    sendToContentScript: async () => {
+      prepareCalls += 1;
+      return { ready: true };
+    },
+    sendToContentScriptResilient: async () => ({ ready: true }),
+    isRetryableContentScriptTransportError: () => false,
+    shouldUseCustomRegistrationEmail: () => false,
+    STANDARD_MAIL_VERIFICATION_RESEND_INTERVAL_MS: 25000,
+    throwIfStopped: () => {},
+    waitForTabStableComplete: async () => {},
+  });
+
+  await assert.rejects(
+    () => executor.executeStep4({
+      email: 'user@example.com',
+      password: 'secret',
+    }),
+    (error) => {
+      assert.match(error.message, /^PHONE_RESEND_SERVER_ERROR::OpenAI contact-verification/);
+      return true;
+    }
+  );
+
+  assert.equal(prepareCalls, 0);
+  assert.equal(resolveCalls, 0);
+  assert.equal(logs.some(({ message }) => /contact-verification 500 错误页（开始前）/.test(message)), true);
+});
