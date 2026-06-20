@@ -992,6 +992,70 @@ test('verification flow can run a 2/3/15 2925 resend polling plan', async () => 
   assert.equal(events.filter((event) => event === 'resend').length, 2);
 });
 
+test('verification flow forwards visible step 10 to 2925 bind-email polling payload', async () => {
+  const pollPayloads = [];
+
+  const helpers = api.createVerificationFlowHelpers({
+    addLog: async () => {},
+    chrome: { tabs: { update: async () => {} } },
+    CLOUDFLARE_TEMP_EMAIL_PROVIDER: 'cloudflare-temp-email',
+    completeNodeFromBackground: async () => {},
+    confirmCustomVerificationStepBypassRequest: async () => ({ confirmed: true }),
+    getHotmailVerificationPollConfig: () => ({}),
+    getHotmailVerificationRequestTimestamp: () => 0,
+    getNodeIdByStepForState: (step) => (Number(step) === 10 ? 'fetch-bind-email-code' : getTestNodeIdByStepForState(step)),
+    getState: async () => ({}),
+    getTabId: async () => 1,
+    HOTMAIL_PROVIDER: 'hotmail-api',
+    isStopError: () => false,
+    LUCKMAIL_PROVIDER: 'luckmail-api',
+    MAIL_2925_VERIFICATION_INTERVAL_MS: 15000,
+    MAIL_2925_VERIFICATION_MAX_ATTEMPTS: 15,
+    pollCloudflareTempEmailVerificationCode: async () => ({}),
+    pollHotmailVerificationCode: async () => ({}),
+    pollLuckmailVerificationCode: async () => ({}),
+    sendToContentScript: async (_source, message) => {
+      if (message.type === 'FILL_CODE') {
+        return { success: true };
+      }
+      return {};
+    },
+    sendToMailContentScriptResilient: async (_mail, message) => {
+      if (message.type !== 'POLL_EMAIL') {
+        return {};
+      }
+      pollPayloads.push(message.payload);
+      return { code: '654321', emailTimestamp: 123 };
+    },
+    setState: async () => {},
+    setStepStatus: async () => {},
+    sleepWithStop: async () => {},
+    throwIfStopped: () => {},
+    VERIFICATION_POLL_MAX_ROUNDS: 5,
+  });
+
+  await helpers.resolveVerificationStep(
+    8,
+    {
+      email: 'bound@example.com',
+      mailProvider: '2925',
+      lastLoginCode: null,
+    },
+    { provider: '2925', label: '2925 邮箱' },
+    {
+      completionStep: 10,
+      maxResendRequests: 0,
+      requestFreshCodeFirst: false,
+      filterAfterTimestamp: 123,
+      resendIntervalMs: 0,
+    }
+  );
+
+  assert.equal(pollPayloads.length, 1);
+  assert.equal(pollPayloads[0].step, 8);
+  assert.equal(pollPayloads[0].visibleStep, 10);
+});
+
 test('verification flow uses full 2925 polling window after a rejected login code', async () => {
   const pollMaxAttempts = [];
   const submittedCodes = [];

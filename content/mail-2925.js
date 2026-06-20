@@ -500,6 +500,21 @@ function findSelectAllControl() {
   return findActionBySelectors(MAIL_SELECT_ALL_SELECTORS);
 }
 
+function findMailItemSelectionControl(item) {
+  if (!item?.querySelectorAll) {
+    return null;
+  }
+
+  const candidates = item.querySelectorAll(MAIL_SELECT_ALL_SELECTORS.join(', '));
+  for (const candidate of candidates) {
+    const target = resolveActionTarget(candidate);
+    if (target && isVisibleNode(target)) {
+      return target;
+    }
+  }
+  return null;
+}
+
 function findMail2925LoginEmailInput() {
   const candidates = Array.from(document.querySelectorAll(MAIL2925_LOGIN_INPUT_SELECTORS.join(', ')));
   for (const candidate of candidates) {
@@ -1450,6 +1465,59 @@ async function openMailAndDeleteAfterRead(item, step) {
   }
 }
 
+async function waitForMailItemMissing(mailId, timeoutMs = 3500) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt <= timeoutMs) {
+    const stillVisible = findMailItems()
+      .some((candidate, index) => getMailItemId(candidate, index) === mailId);
+    if (!stillVisible) {
+      return true;
+    }
+    await sleep(250);
+  }
+  return !findMailItems()
+    .some((candidate, index) => getMailItemId(candidate, index) === mailId);
+}
+
+async function deleteDiscardedFirstMailWithoutCode(mailId, step) {
+  if (!mailId) {
+    return { deleted: false, missing: false };
+  }
+
+  try {
+    await returnToInbox();
+    const mailbox = await waitForMailboxReady(5000);
+    const items = Array.isArray(mailbox?.items) && mailbox.items.length
+      ? mailbox.items
+      : findMailItems();
+    const target = items.find((candidate, index) => getMailItemId(candidate, index) === mailId) || null;
+    if (!target) {
+      return { deleted: false, missing: true };
+    }
+
+    const selectionControl = typeof findMailItemSelectionControl === 'function'
+      ? findMailItemSelectionControl(target)
+      : null;
+    const deleteButton = findDeleteButton();
+    if (selectionControl && deleteButton) {
+      if (!isCheckboxChecked(selectionControl)) {
+        simulateClick(selectionControl);
+        await sleepRandom(200, 500);
+      }
+      simulateClick(deleteButton);
+      const deleted = await waitForMailItemMissing(mailId);
+      return { deleted, missing: false, selected: true };
+    }
+
+    await openMailAndDeleteAfterRead(target, step);
+    const deleted = await waitForMailItemMissing(mailId);
+    return { deleted, missing: false, selected: false };
+  } catch (err) {
+    console.warn(MAIL2925_PREFIX, `Step ${step}: delete discarded first mail failed:`, err?.message || err);
+    return { deleted: false, missing: false, error: err?.message || String(err || '') };
+  }
+}
+
 async function deleteAllMailboxEmails(step) {
   try {
     await returnToInbox();
@@ -1736,6 +1804,7 @@ async function handlePollEmail(step, payload) {
     let shouldRefreshImmediately = false;
     if (items.length > 0) {
       const item = items[0];
+      const firstMailId = getMailItemId(item, 0);
       const itemTimestamp = parseMailItemTimestamp(item);
       const itemMinute = normalizeMinuteTimestamp(itemTimestamp || 0);
       const previewText = getMailItemText(item);
@@ -1786,6 +1855,15 @@ async function handlePollEmail(step, payload) {
       }
 
       if (discardReason) {
+        const visibleStep = Math.floor(Number(payload?.visibleStep || step) || step);
+        if (visibleStep === 10 && !candidateCode) {
+          const deleteResult = await deleteDiscardedFirstMailWithoutCode(firstMailId, step);
+          if (deleteResult?.deleted || deleteResult?.missing) {
+            log(`步骤 ${visibleStep}：第一封邮件没有验证码，已点击删除后继续刷新收件箱。`, 'info');
+          } else {
+            log(`步骤 ${visibleStep}：第一封邮件没有验证码，但点击删除未确认成功，将继续刷新收件箱。`, 'warn');
+          }
+        }
         shouldRefreshImmediately = true;
         log(`步骤 ${step}：第一封邮件未命中可用验证码（${discardReason}），已按当前邮件处理后准备刷新收件箱。`, 'info');
       } else {

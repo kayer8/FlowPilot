@@ -440,7 +440,8 @@
       const is2925Provider = state?.mailProvider === '2925';
       const mail2925MatchTargetEmail = is2925Provider
         && String(state?.mail2925Mode || '').trim().toLowerCase() === 'receive';
-      return {
+      const visibleStep = Number(overrides?.visibleStep || state?.visibleStep || 0) || 0;
+      const payload = {
         flowId: String(state?.activeFlowId || '').trim(),
         step: normalizedStep,
         filterAfterTimestamp: is2925Provider ? 0 : getHotmailVerificationRequestTimestamp(normalizedStep, state),
@@ -457,6 +458,10 @@
         intervalMs: is2925Provider ? MAIL_2925_VERIFICATION_INTERVAL_MS : 3000,
         ...overrides,
       };
+      if (visibleStep > 0) {
+        payload.visibleStep = visibleStep;
+      }
+      return payload;
     }
 
     async function getRemainingTimeBudgetMs(step, options = {}, actionLabel = '') {
@@ -757,6 +762,7 @@
             ...payloadOverrides,
             filterAfterTimestamp,
             excludeCodes: [...rejectedCodes],
+            visibleStep: payloadOverrides.visibleStep || activeVerificationLogStep || getCompletionStep(step, pollOverrides),
           });
 
           if (lastResendAt > 0) {
@@ -965,6 +971,11 @@
         pollAttemptPlan: _ignoredPollAttemptPlan,
         ...cleanPollOverrides
       } = pollOverrides;
+      const pollVisibleStep = Math.floor(Number(
+        cleanPollOverrides.visibleStep
+        || activeVerificationLogStep
+        || getCompletionStep(step, pollOverrides)
+      ) || 0) || step;
 
       if (mail.provider === HOTMAIL_PROVIDER) {
         const hotmailPollConfig = getHotmailVerificationPollConfig(step);
@@ -1009,7 +1020,10 @@
       }
 
       if (Number(pollOverrides.resendIntervalMs) > 0) {
-        return pollFreshVerificationCodeWithResendInterval(step, state, mail, pollOverrides);
+        return pollFreshVerificationCodeWithResendInterval(step, state, mail, {
+          ...pollOverrides,
+          visibleStep: pollVisibleStep,
+        });
       }
 
       const stateKey = getVerificationCodeStateKey(step);
@@ -1051,6 +1065,7 @@
           ...cleanPollOverrides,
           filterAfterTimestamp,
           excludeCodes: [...rejectedCodes],
+          visibleStep: pollVisibleStep,
         });
         const plannedPollMaxAttempts = pollAttemptPlan[round - 1] || 0;
         if (plannedPollMaxAttempts > 0) {
