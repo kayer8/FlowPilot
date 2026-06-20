@@ -13601,6 +13601,7 @@ const verificationFlowHelpers = self.MultiPageBackgroundVerificationFlow?.create
   pollHotmailVerificationCode,
   pollLuckmailVerificationCode,
   pollYydsMailVerificationCode,
+  reopenMail2925MailboxSession,
   sendToContentScript,
   sendToContentScriptResilient,
   sendToMailContentScriptResilient,

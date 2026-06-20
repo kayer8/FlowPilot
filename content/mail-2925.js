@@ -1097,12 +1097,24 @@ function findSafeStandaloneSixDigitCode(text, options = {}) {
 function extractContextualVerificationCode(text, options = {}) {
   const normalized = String(text || '');
   const patterns = [
-    /(?:enter\s+this\s+(?:temporary\s+)?(?:verification\s+)?code(?:\s+to\s+continue)?|temporary\s+verification\s+code|verification\s+code|log-?in\s+code|your\s+chatgpt\s+code(?:\s+is)?|code(?:\s+is)?|\u8f93\u5165\u6b64\u4e34\u65f6\u9a8c\u8bc1\u7801\u4ee5\u7ee7\u7eed|\u4e34\u65f6\u9a8c\u8bc1\u7801|\u9a8c\u8bc1\u7801|\u4ee3\u7801)[^0-9]{0,120}(\d{6})/i,
-    /(\d{6})[^0-9]{0,80}(?:is\s+your\s+(?:temporary\s+)?(?:verification\s+)?code|\u662f\u4f60\u7684(?:\u4e34\u65f6)?\u9a8c\u8bc1\u7801)/i,
+    {
+      pattern: /(?:enter\s+this\s+(?:temporary\s+)?(?:verification\s+)?code(?:\s+to\s+continue)?|\u8f93\u5165\u6b64\u4e34\u65f6\u9a8c\u8bc1\u7801\u4ee5\u7ee7\u7eed)[\s\S]{0,320}?(\d{6})/i,
+      relaxContext: true,
+    },
+    {
+      pattern: /(?:temporary\s+verification\s+code|verification\s+code|log-?in\s+code|your\s+chatgpt\s+code(?:\s+is)?|code(?:\s+is)?|\u4e34\u65f6\u9a8c\u8bc1\u7801|\u9a8c\u8bc1\u7801|\u4ee3\u7801)[^0-9]{0,240}(\d{6})/i,
+      relaxContext: false,
+    },
+    {
+      pattern: /(\d{6})[^0-9]{0,80}(?:is\s+your\s+(?:temporary\s+)?(?:verification\s+)?code|\u662f\u4f60\u7684(?:\u4e34\u65f6)?\u9a8c\u8bc1\u7801)/i,
+      relaxContext: false,
+    },
   ];
 
-  for (const pattern of patterns) {
-    const candidate = findSafeCodeByPattern(normalized, pattern, options);
+  for (const entry of patterns) {
+    const candidate = findSafeCodeByPattern(normalized, entry.pattern, entry.relaxContext
+      ? { ...options, requireContext: false }
+      : options);
     if (candidate) {
       return candidate;
     }
@@ -1490,10 +1502,13 @@ async function deleteDiscardedFirstMailWithoutCode(mailId, step) {
     const items = Array.isArray(mailbox?.items) && mailbox.items.length
       ? mailbox.items
       : findMailItems();
-    const target = items.find((candidate, index) => getMailItemId(candidate, index) === mailId) || null;
+    const target = items.find((candidate, index) => getMailItemId(candidate, index) === mailId)
+      || items[0]
+      || null;
     if (!target) {
       return { deleted: false, missing: true };
     }
+    const targetMailId = getMailItemId(target, items.indexOf(target));
 
     const selectionControl = typeof findMailItemSelectionControl === 'function'
       ? findMailItemSelectionControl(target)
@@ -1505,12 +1520,12 @@ async function deleteDiscardedFirstMailWithoutCode(mailId, step) {
         await sleepRandom(200, 500);
       }
       simulateClick(deleteButton);
-      const deleted = await waitForMailItemMissing(mailId);
+      const deleted = await waitForMailItemMissing(targetMailId);
       return { deleted, missing: false, selected: true };
     }
 
     await openMailAndDeleteAfterRead(target, step);
-    const deleted = await waitForMailItemMissing(mailId);
+    const deleted = await waitForMailItemMissing(targetMailId);
     return { deleted, missing: false, selected: false };
   } catch (err) {
     console.warn(MAIL2925_PREFIX, `Step ${step}: delete discarded first mail failed:`, err?.message || err);
@@ -1812,7 +1827,10 @@ async function handlePollEmail(step, payload) {
         codePatterns,
         requireContext: true,
       });
-      const openedText = await openMailAndDeleteAfterRead(item, step);
+      const visibleStep = Math.floor(Number(payload?.visibleStep || step) || step);
+      const openedText = visibleStep === 10
+        ? await openMailAndGetMessageText(item)
+        : await openMailAndDeleteAfterRead(item, step);
       const bodyCode = extractVerificationCode(openedText, {
         codePatterns,
         requireContext: true,
@@ -1855,7 +1873,6 @@ async function handlePollEmail(step, payload) {
       }
 
       if (discardReason) {
-        const visibleStep = Math.floor(Number(payload?.visibleStep || step) || step);
         if (visibleStep === 10 && !candidateCode) {
           const deleteResult = await deleteDiscardedFirstMailWithoutCode(firstMailId, step);
           if (deleteResult?.deleted || deleteResult?.missing) {

@@ -32,6 +32,7 @@
       pollHotmailVerificationCode,
       pollLuckmailVerificationCode,
       pollYydsMailVerificationCode,
+      reopenMail2925MailboxSession,
       sendToContentScript,
       sendToContentScriptResilient,
       sendToMailContentScriptResilient,
@@ -573,6 +574,28 @@
 
       const currentState = await getState();
       if (currentState.mailProvider === '2925') {
+        const visibleStep = Math.floor(Number(
+          options.visibleStep
+          || activeVerificationLogStep
+          || getCompletionStep(step, options)
+        ) || 0) || step;
+        if (visibleStep === 10 && typeof reopenMail2925MailboxSession === 'function') {
+          try {
+            await reopenMail2925MailboxSession({
+              step: visibleStep,
+              actionLabel: `步骤 ${visibleStep}：重新发送验证码后重开 2925 邮箱`,
+              allowLoginWhenOnLoginPage: true,
+            });
+            await addLog(`步骤 ${visibleStep}：重新发送验证码后已关闭并重新打开 2925 邮箱标签页。`, 'info');
+            return requestedAt;
+          } catch (err) {
+            if (isStopError(err)) {
+              throw err;
+            }
+            await addLog(`步骤 ${visibleStep}：重新打开 2925 邮箱标签页失败，将继续复用现有邮箱页：${err.message}`, 'warn');
+          }
+        }
+
         const mailTabId = await getTabId('mail-2925');
         if (mailTabId) {
           await chrome.tabs.update(mailTabId, { active: true });

@@ -1056,6 +1056,41 @@ test('verification flow forwards visible step 10 to 2925 bind-email polling payl
   assert.equal(pollPayloads[0].visibleStep, 10);
 });
 
+test('verification flow reopens the 2925 mailbox tab after a step 10 resend', async () => {
+  const updates = [];
+  const reopens = [];
+  const messages = [];
+
+  const helpers = createVerificationFlowTestHelpers({
+    chrome: {
+      tabs: {
+        update: async (tabId, updateInfo) => {
+          updates.push([tabId, updateInfo]);
+        },
+        remove: async () => {},
+      },
+    },
+    getState: async () => ({ mailProvider: '2925' }),
+    getTabId: async (source) => (source === 'openai-auth' ? 1 : 2),
+    reopenMail2925MailboxSession: async (options) => {
+      reopens.push(options);
+      return { ok: true };
+    },
+    sendToContentScript: async (_source, message) => {
+      messages.push(message);
+      return { resent: true };
+    },
+  });
+
+  await helpers.requestVerificationCodeResend(8, { visibleStep: 10 });
+
+  assert.deepStrictEqual(updates, [[1, { active: true }]]);
+  assert.deepStrictEqual(messages.map((message) => message.type), ['RESEND_VERIFICATION_CODE']);
+  assert.equal(reopens.length, 1);
+  assert.equal(reopens[0].step, 10);
+  assert.equal(reopens[0].allowLoginWhenOnLoginPage, true);
+});
+
 test('verification flow uses full 2925 polling window after a rejected login code', async () => {
   const pollMaxAttempts = [];
   const submittedCodes = [];

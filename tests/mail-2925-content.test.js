@@ -449,9 +449,13 @@ async function refreshInbox() {
     state = 'second-only';
   }
 }
-async function openMailAndDeleteAfterRead(item) {
+async function openMailAndGetMessageText(item) {
   calls.push(\`open:\${item.id}\`);
   return item.id === 'second' ? 'Enter this code 778899' : 'No code in this OpenAI notice';
+}
+async function openMailAndDeleteAfterRead(item) {
+  calls.push(\`delete-after-read:\${item.id}\`);
+  return item.text;
 }
 async function deleteDiscardedFirstMailWithoutCode(mailId) {
   calls.push(\`delete:\${mailId}\`);
@@ -491,6 +495,99 @@ return {
     'refresh',
     'open:second',
   ]);
+});
+
+test('handlePollEmail keeps the first step 10 mail when the code is recognized', async () => {
+  const bundle = [
+    extractFunction('normalizeMinuteTimestamp'),
+    extractFunction('refreshInboxAfterDiscardedFirstMail'),
+    extractFunction('handlePollEmail'),
+  ].join('\n');
+
+  const api = new Function(`
+const calls = [];
+const seenCodes = new Set();
+const firstMail = { id: 'first', text: 'OpenAI verification code' };
+
+function findMailItems() {
+  return [firstMail];
+}
+
+function getMailItemId(item) {
+  return item.id;
+}
+
+function getCurrentMailIds(items = []) {
+  return new Set(items.map((item) => item.id));
+}
+
+function parseMailItemTimestamp() {
+  return Date.now();
+}
+
+function matchesMailFilters(text) {
+  return /openai|verification/i.test(String(text || ''));
+}
+
+function getMailItemText(item) {
+  return item.text;
+}
+
+function extractVerificationCode(text) {
+  const match = String(text || '').match(/(\\d{6})/);
+  return match ? match[1] : null;
+}
+
+async function sleep() {}
+async function sleepRandom() {}
+async function waitForMailboxReady() {
+  const items = findMailItems();
+  return { ready: true, items, empty: items.length === 0 };
+}
+async function returnToInbox() {
+  calls.push('inbox');
+  return true;
+}
+async function refreshInbox() {
+  calls.push('refresh');
+}
+async function openMailAndGetMessageText(item) {
+  calls.push(\`open:\${item.id}\`);
+  return 'OpenAI\\nEnter this code to continue\\n778899';
+}
+async function openMailAndDeleteAfterRead(item) {
+  calls.push(\`delete-after-read:\${item.id}\`);
+  return item.text;
+}
+async function deleteDiscardedFirstMailWithoutCode(mailId) {
+  calls.push(\`delete:\${mailId}\`);
+  return { deleted: true };
+}
+
+async function ensureSeenCodesSession() {}
+function persistSeenCodes() {}
+function log() {}
+
+${bundle}
+
+return {
+  handlePollEmail,
+  getCalls() {
+    return calls.slice();
+  },
+};
+`)();
+
+  const result = await api.handlePollEmail(8, {
+    visibleStep: 10,
+    senderFilters: ['openai'],
+    subjectFilters: ['verification'],
+    maxAttempts: 1,
+    intervalMs: 15000,
+  });
+
+  assert.equal(result.code, '778899');
+  assert.deepEqual(api.getCalls(), ['inbox', 'refresh', 'open:first']);
 });
 
 test('handlePollEmail keeps ignoring targetEmail when receive-mode matching is disabled', async () => {
@@ -948,6 +1045,26 @@ return { extractVerificationCode };
   assert.equal(api.extractVerificationCode(bodyText, { requireContext: true }), '371138');
 });
 
+test('extractVerificationCode accepts OpenAI code after a long strong prompt block', () => {
+  const bundle = buildExtractVerificationCodeBundle();
+
+  const api = new Function(`
+${bundle}
+return { extractVerificationCode };
+`)();
+
+  const bodyText = [
+    '2925 mail page',
+    'OpenAI',
+    '输入此临时验证码以继续',
+    '这段内容模拟 2925 邮箱正文 DOM 中夹杂的按钮、空白、说明文字和布局文本，不包含任何数字。'.repeat(6),
+    '137625',
+    '如果你未尝试关联电子邮件地址，请忽略此邮件。',
+  ].join('\n');
+
+  assert.equal(api.extractVerificationCode(bodyText, { requireContext: true }), '137625');
+});
+
 test('extractVerificationCode ignores OpenAI bounce header code and returns the mail body code', () => {
   const bundle = buildExtractVerificationCodeBundle();
 
@@ -1239,6 +1356,72 @@ return {
 
   assert.match(text, /202167/);
   assert.deepEqual(api.getCalls(), ['mail', 'inbox']);
+});
+
+test('deleteDiscardedFirstMailWithoutCode deletes the first visible row when the original id changed', async () => {
+  const bundle = [
+    extractFunction('waitForMailItemMissing'),
+    extractFunction('deleteDiscardedFirstMailWithoutCode'),
+  ].join('\n');
+
+  const api = new Function(`
+const calls = [];
+let mailboxCleared = false;
+const firstMail = { id: 'first-after-read' };
+
+async function returnToInbox() {
+  calls.push('inbox');
+  return true;
+}
+
+async function waitForMailboxReady() {
+  const items = findMailItems();
+  return { ready: true, items, empty: items.length === 0 };
+}
+
+function findMailItems() {
+  return mailboxCleared ? [] : [firstMail];
+}
+
+function getMailItemId(item) {
+  return item.id;
+}
+
+function findMailItemSelectionControl() {
+  return null;
+}
+
+function findDeleteButton() {
+  return null;
+}
+
+async function openMailAndDeleteAfterRead(item) {
+  calls.push(\`open-delete:\${item.id}\`);
+  mailboxCleared = true;
+  return 'OpenAI notice without code';
+}
+
+async function sleep() {}
+async function sleepRandom() {}
+
+const console = { warn() {} };
+const MAIL2925_PREFIX = '[MultiPage:mail-2925]';
+
+${bundle}
+
+return {
+  deleteDiscardedFirstMailWithoutCode,
+  getCalls() {
+    return calls.slice();
+  },
+};
+`)();
+
+  const result = await api.deleteDiscardedFirstMailWithoutCode('first-before-read', 8);
+
+  assert.equal(result.deleted, true);
+  assert.equal(result.missing, false);
+  assert.deepEqual(api.getCalls(), ['inbox', 'open-delete:first-after-read']);
 });
 
 test('deleteAllMailboxEmails selects all messages and clicks delete', async () => {
