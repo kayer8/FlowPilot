@@ -154,6 +154,38 @@ const MAIL_DELETE_SELECTORS = [
   '[title*="删除"]',
   '[aria-label*="删除"]',
   '[class*="Delete"]',
+  '[class*="trash"]',
+  '[class*="Trash"]',
+  '[class*="-del"]',
+  '[class*="_del"]',
+  '[class*="del-"]',
+  '[class*="del_"]',
+  '[class*="-Del"]',
+  '[class*="_Del"]',
+  '[class*="Del-"]',
+  '[class*="Del_"]',
+  '[data-action*="delete"]',
+  '[data-action*="del"]',
+  '[data-action*="trash"]',
+  '[data-icon*="delete"]',
+  '[data-icon*="trash"]',
+  '[title*="Delete"]',
+  '[aria-label*="Delete"]',
+  'use[href*="delete"]',
+  'use[href*="trash"]',
+  'use[xlink\\:href*="delete"]',
+  'use[xlink\\:href*="trash"]',
+];
+const MAIL_CONFIRM_DELETE_SELECTORS = [
+  '.el-message-box__btns button',
+  '.el-dialog__footer button',
+  '.ivu-modal-footer button',
+  '[role="dialog"] button',
+  '[class*="modal"] button',
+  '[class*="dialog"] button',
+  '[class*="MessageBox"] button',
+  '[class*="confirm"]',
+  '[class*="Confirm"]',
 ];
 const MAIL_SELECT_ALL_SELECTORS = [
   'input[type="checkbox"]',
@@ -195,7 +227,7 @@ const MAIL_EMPTY_STATE_SELECTORS = [
   '[class*="no-data"]',
   '[class*="NoData"]',
 ];
-const MAIL_ACTION_CANDIDATE_SELECTORS = 'button, [role="button"], a, label, span, div';
+const MAIL_ACTION_CANDIDATE_SELECTORS = 'button, [role="button"], a, label, span, div, i, svg, use';
 const MAIL2925_LIMIT_ERROR_PREFIX = 'MAIL2925_LIMIT_REACHED::';
 const MAIL2925_LOGIN_INPUT_SELECTORS = [
   'input[type="email"]',
@@ -493,7 +525,40 @@ function findDeleteButton() {
   return findToolbarActionButton([
     /删除/i,
     /delete/i,
+    /trash/i,
+    /del/i,
   ], MAIL_DELETE_SELECTORS);
+}
+
+function findDeleteConfirmButton() {
+  const candidates = [
+    ...document.querySelectorAll(MAIL_CONFIRM_DELETE_SELECTORS.join(', ')),
+    ...document.querySelectorAll(MAIL_ACTION_CANDIDATE_SELECTORS),
+  ];
+  const seen = new Set();
+  for (const candidate of candidates) {
+    const target = resolveActionTarget(candidate);
+    if (!target || seen.has(target) || !isVisibleNode(target) || isMailItemNode(target)) {
+      continue;
+    }
+    seen.add(target);
+    const dialog = target.closest?.('[role="dialog"], .el-message-box, .el-dialog, .ivu-modal, [class*="modal"], [class*="dialog"], [class*="MessageBox"]');
+    if (!dialog || !isVisibleNode(dialog)) {
+      continue;
+    }
+
+    const text = normalizeNodeText(target.innerText || target.textContent || '');
+    const label = normalizeNodeText(target.getAttribute?.('aria-label') || target.getAttribute?.('title') || '');
+    const combined = `${text} ${label}`;
+    if (/取消|关闭|放弃|cancel|close|no/i.test(combined)) {
+      continue;
+    }
+    if (/确定|确认|删除|OK|Yes|confirm|delete/i.test(combined)) {
+      return target;
+    }
+  }
+
+  return null;
 }
 
 function findSelectAllControl() {
@@ -1448,15 +1513,25 @@ async function deleteCurrentMailboxEmail(step) {
   try {
     const deleteButton = findDeleteButton();
     if (!deleteButton) {
+      console.warn(MAIL2925_PREFIX, `Step ${step}: delete-current cleanup skipped because delete button was not found`);
       return false;
     }
 
     simulateClick(deleteButton);
-    await sleepRandom(200, 500);
-    return true;
+    await sleepRandom(300, 700);
+    const confirmButton = findDeleteConfirmButton();
+    if (confirmButton) {
+      simulateClick(confirmButton);
+      await sleepRandom(300, 700);
+      console.log(MAIL2925_PREFIX, `Step ${step}: delete-current clicked delete and confirmed dialog`);
+      return { clicked: true, confirmed: true };
+    }
+
+    console.log(MAIL2925_PREFIX, `Step ${step}: delete-current clicked delete without confirmation dialog`);
+    return { clicked: true, confirmed: false };
   } catch (err) {
     console.warn(MAIL2925_PREFIX, `Step ${step}: delete-current cleanup failed:`, err?.message || err);
-    return false;
+    return { clicked: false, confirmed: false, error: err?.message || String(err || '') };
   }
 }
 
@@ -1468,26 +1543,45 @@ async function openMailAndDeleteAfterRead(item, step) {
     readResult = await waitForOpenedMailText(readContext);
     return readResult.text || '';
   } finally {
-    if (readResult.ready) {
-      await deleteCurrentMailboxEmail(step);
-    } else {
-      console.warn(MAIL2925_PREFIX, `Step ${step}: opened mail did not finish loading; skipped delete-current cleanup`);
+    if (!readResult.ready) {
+      console.warn(MAIL2925_PREFIX, `Step ${step}: opened mail did not finish loading; still attempting delete-current cleanup`);
     }
+    await deleteCurrentMailboxEmail(step);
     await returnToInbox();
   }
+}
+
+function isMailboxListReliableForMissingCheck(mailbox = null) {
+  const items = Array.isArray(mailbox?.items) ? mailbox.items : findMailItems();
+  return items.length > 0 || isMailListDomReady() || isMailboxEmptyStateVisible();
 }
 
 async function waitForMailItemMissing(mailId, timeoutMs = 3500) {
   const startedAt = Date.now();
   while (Date.now() - startedAt <= timeoutMs) {
-    const stillVisible = findMailItems()
+    await returnToInbox();
+    const mailbox = await waitForMailboxReady(500);
+    if (!isMailboxListReliableForMissingCheck(mailbox)) {
+      await sleep(250);
+      continue;
+    }
+
+    const items = Array.isArray(mailbox?.items) ? mailbox.items : findMailItems();
+    const stillVisible = items
       .some((candidate, index) => getMailItemId(candidate, index) === mailId);
     if (!stillVisible) {
       return true;
     }
     await sleep(250);
   }
-  return !findMailItems()
+
+  await returnToInbox();
+  const mailbox = await waitForMailboxReady(500);
+  if (!isMailboxListReliableForMissingCheck(mailbox)) {
+    return false;
+  }
+  const items = Array.isArray(mailbox?.items) ? mailbox.items : findMailItems();
+  return !items
     .some((candidate, index) => getMailItemId(candidate, index) === mailId);
 }
 
@@ -1506,7 +1600,7 @@ async function deleteDiscardedFirstMailWithoutCode(mailId, step) {
       || items[0]
       || null;
     if (!target) {
-      return { deleted: false, missing: true };
+      return { deleted: false, missing: isMailboxListReliableForMissingCheck(mailbox) };
     }
     const targetMailId = getMailItemId(target, items.indexOf(target));
 
@@ -1519,9 +1613,10 @@ async function deleteDiscardedFirstMailWithoutCode(mailId, step) {
         simulateClick(selectionControl);
         await sleepRandom(200, 500);
       }
-      simulateClick(deleteButton);
-      const deleted = await waitForMailItemMissing(targetMailId);
-      return { deleted, missing: false, selected: true };
+      const clickResult = await deleteCurrentMailboxEmail(step);
+      const clicked = clickResult === true || Boolean(clickResult?.clicked);
+      const deleted = clicked ? await waitForMailItemMissing(targetMailId) : false;
+      return { deleted, missing: false, selected: true, clicked };
     }
 
     await openMailAndDeleteAfterRead(target, step);

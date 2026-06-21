@@ -1353,6 +1353,10 @@ function findDeleteButton() {
   return deleteButton;
 }
 
+function findDeleteConfirmButton() {
+  return null;
+}
+
 function findInboxLink() {
   return { kind: 'inbox' };
 }
@@ -1398,7 +1402,48 @@ return {
   assert.deepEqual(api.getCalls(), ['mail', 'delete', 'inbox']);
 });
 
-test('openMailAndDeleteAfterRead skips deleting when opened message never finishes loading', async () => {
+test('deleteCurrentMailboxEmail confirms the delete dialog when it appears', async () => {
+  const bundle = extractFunction('deleteCurrentMailboxEmail');
+
+  const api = new Function(`
+const calls = [];
+const deleteButton = { kind: 'delete' };
+const confirmButton = { kind: 'confirm' };
+
+function findDeleteButton() {
+  return deleteButton;
+}
+
+function findDeleteConfirmButton() {
+  return confirmButton;
+}
+
+function simulateClick(node) {
+  calls.push(node.kind);
+}
+
+async function sleepRandom() {}
+
+const console = { warn() {}, log() {} };
+const MAIL2925_PREFIX = '[MultiPage:mail-2925]';
+
+${bundle}
+
+return {
+  deleteCurrentMailboxEmail,
+  getCalls() {
+    return calls.slice();
+  },
+};
+`)();
+
+  const result = await api.deleteCurrentMailboxEmail(8);
+
+  assert.deepEqual(result, { clicked: true, confirmed: true });
+  assert.deepEqual(api.getCalls(), ['delete', 'confirm']);
+});
+
+test('openMailAndDeleteAfterRead still deletes when opened message never finishes loading', async () => {
   const bundle = [
     extractFunction('normalizeNodeText'),
     extractFunction('getCurrentPageText'),
@@ -1441,6 +1486,10 @@ function findDeleteButton() {
   return deleteButton;
 }
 
+function findDeleteConfirmButton() {
+  return null;
+}
+
 function findInboxLink() {
   return { kind: 'inbox' };
 }
@@ -1466,7 +1515,7 @@ async function waitForMailboxReady() {
   const items = findMailItems();
   return { ready: items.length > 0, items, empty: items.length === 0 };
 }
-const console = { warn() {} };
+const console = { warn() {}, log() {} };
 const MAIL2925_PREFIX = '[MultiPage:mail-2925]';
 
 ${bundle}
@@ -1483,11 +1532,12 @@ return {
   const text = await api.openMailAndDeleteAfterRead(api.mailItem, 8);
 
   assert.match(text, /202167/);
-  assert.deepEqual(api.getCalls(), ['mail', 'inbox']);
+  assert.deepEqual(api.getCalls(), ['mail', 'delete', 'inbox']);
 });
 
 test('deleteDiscardedFirstMailWithoutCode deletes the first visible row when the original id changed', async () => {
   const bundle = [
+    extractFunction('isMailboxListReliableForMissingCheck'),
     extractFunction('waitForMailItemMissing'),
     extractFunction('deleteDiscardedFirstMailWithoutCode'),
   ].join('\n');
@@ -1511,6 +1561,14 @@ function findMailItems() {
   return mailboxCleared ? [] : [firstMail];
 }
 
+function isMailListDomReady() {
+  return true;
+}
+
+function isMailboxEmptyStateVisible() {
+  return mailboxCleared;
+}
+
 function getMailItemId(item) {
   return item.id;
 }
@@ -1532,7 +1590,7 @@ async function openMailAndDeleteAfterRead(item) {
 async function sleep() {}
 async function sleepRandom() {}
 
-const console = { warn() {} };
+const console = { warn() {}, log() {} };
 const MAIL2925_PREFIX = '[MultiPage:mail-2925]';
 
 ${bundle}
@@ -1549,7 +1607,55 @@ return {
 
   assert.equal(result.deleted, true);
   assert.equal(result.missing, false);
-  assert.deepEqual(api.getCalls(), ['inbox', 'open-delete:first-after-read']);
+  assert.deepEqual(api.getCalls(), ['inbox', 'open-delete:first-after-read', 'inbox']);
+});
+
+test('waitForMailItemMissing does not treat a hidden detail view as deleted', async () => {
+  const bundle = [
+    extractFunction('isMailboxListReliableForMissingCheck'),
+    extractFunction('waitForMailItemMissing'),
+  ].join('\n');
+
+  const api = new Function(`
+const calls = [];
+
+async function returnToInbox() {
+  calls.push('inbox');
+  return false;
+}
+
+async function waitForMailboxReady() {
+  return { ready: true, items: [], empty: true };
+}
+
+function findMailItems() {
+  return [];
+}
+
+function isMailListDomReady() {
+  return false;
+}
+
+function isMailboxEmptyStateVisible() {
+  return false;
+}
+
+async function sleep() {}
+
+${bundle}
+
+return {
+  waitForMailItemMissing,
+  getCalls() {
+    return calls.slice();
+  },
+};
+`)();
+
+  const result = await api.waitForMailItemMissing('mail-1', -1);
+
+  assert.equal(result, false);
+  assert.deepEqual(api.getCalls(), ['inbox']);
 });
 
 test('deleteAllMailboxEmails selects all messages and clicks delete', async () => {
