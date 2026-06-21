@@ -1873,7 +1873,7 @@ async function handlePollEmail(step, payload) {
       }
 
       if (discardReason) {
-        if (visibleStep === 10 && !candidateCode) {
+        if (!candidateCode) {
           const deleteResult = await deleteDiscardedFirstMailWithoutCode(firstMailId, step);
           if (deleteResult?.deleted || deleteResult?.missing) {
             log(`步骤 ${visibleStep}：第一封邮件没有验证码，已点击删除后继续刷新收件箱。`, 'info');

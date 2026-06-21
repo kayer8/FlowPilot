@@ -226,8 +226,11 @@ async function refreshInbox() {
 
 async function openMailAndDeleteAfterRead(item) {
   readAndDeleteCalls.push(item.id);
-  deletedMailIds.add(item.id);
   return item.id === 'new' ? 'Your ChatGPT code is 654321' : 'No code here';
+}
+async function deleteDiscardedFirstMailWithoutCode(mailId) {
+  deletedMailIds.add(mailId);
+  return { deleted: true };
 }
 
 async function ensureSeenCodesSession() {}
@@ -273,6 +276,7 @@ let longSleepCalls = 0;
 let discardWaitCalls = 0;
 const readAndDeleteCalls = [];
 const seenCodes = new Set();
+const deletedMailIds = new Set();
 const firstMail = { id: 'first', text: 'OpenAI security notice without code' };
 const secondMail = { id: 'second', text: 'OpenAI verification code' };
 
@@ -280,7 +284,10 @@ function findMailItems() {
   if (state === 'empty') {
     return [];
   }
-  return state === 'second' ? [secondMail] : [firstMail];
+  if (state === 'second') {
+    return [secondMail];
+  }
+  return deletedMailIds.has('first') ? [] : [firstMail];
 }
 
 function getMailItemId(item) {
@@ -337,6 +344,10 @@ async function openMailAndDeleteAfterRead(item) {
   readAndDeleteCalls.push(item.id);
   return item.id === 'second' ? 'Enter this code 778899' : 'No code in this OpenAI notice';
 }
+async function deleteDiscardedFirstMailWithoutCode(mailId) {
+  deletedMailIds.add(mailId);
+  return { deleted: true };
+}
 
 async function ensureSeenCodesSession() {}
 function persistSeenCodes() {}
@@ -373,6 +384,123 @@ return {
   assert.equal(api.getLongSleepCalls(), 0);
   assert.equal(api.getDiscardWaitCalls(), 1);
   assert.deepEqual(api.getReadAndDeleteCalls(), ['first', 'second']);
+});
+
+test('handlePollEmail deletes a step 8 first mail before refreshing when it has no code', async () => {
+  const bundle = [
+    extractFunction('normalizeMinuteTimestamp'),
+    extractFunction('refreshInboxAfterDiscardedFirstMail'),
+    extractFunction('handlePollEmail'),
+  ].join('\n');
+
+  const api = new Function(`
+let state = 'empty';
+let refreshCalls = 0;
+const calls = [];
+const seenCodes = new Set();
+const deletedMailIds = new Set();
+const firstMail = { id: 'first', text: 'OpenAI security notice without code' };
+const secondMail = { id: 'second', text: 'OpenAI verification code' };
+
+function findMailItems() {
+  if (state === 'empty') {
+    return [];
+  }
+  const items = [];
+  if (!deletedMailIds.has('first') && state !== 'second-only') {
+    items.push(firstMail);
+  }
+  if (state === 'second' || state === 'second-only') {
+    items.push(secondMail);
+  }
+  return items;
+}
+
+function getMailItemId(item) {
+  return item.id;
+}
+
+function getCurrentMailIds(items = []) {
+  return new Set(items.map((item) => item.id));
+}
+
+function parseMailItemTimestamp() {
+  return Date.now();
+}
+
+function matchesMailFilters(text) {
+  return /openai|verification|notice/i.test(String(text || ''));
+}
+
+function getMailItemText(item) {
+  return item.text;
+}
+
+function extractVerificationCode(text) {
+  const match = String(text || '').match(/(\\d{6})/);
+  return match ? match[1] : null;
+}
+
+async function sleep() {}
+async function sleepRandom() {}
+async function waitForMailboxReady() {
+  const items = findMailItems();
+  return { ready: true, items, empty: items.length === 0 };
+}
+async function returnToInbox() {
+  calls.push('inbox');
+  return true;
+}
+async function refreshInbox() {
+  calls.push('refresh');
+  refreshCalls += 1;
+  if (refreshCalls === 1) {
+    state = 'second';
+  } else {
+    state = 'second-only';
+  }
+}
+async function openMailAndDeleteAfterRead(item) {
+  calls.push(\`open:\${item.id}\`);
+  return item.id === 'second' ? 'Enter this code 778899' : 'No code in this OpenAI notice';
+}
+async function deleteDiscardedFirstMailWithoutCode(mailId) {
+  calls.push(\`delete:\${mailId}\`);
+  deletedMailIds.add(mailId);
+  return { deleted: true };
+}
+
+async function ensureSeenCodesSession() {}
+function persistSeenCodes() {}
+function log() {}
+
+${bundle}
+
+return {
+  handlePollEmail,
+  getCalls() {
+    return calls.slice();
+  },
+};
+`)();
+
+  const result = await api.handlePollEmail(8, {
+    senderFilters: ['openai'],
+    subjectFilters: ['verification', 'notice'],
+    maxAttempts: 2,
+    intervalMs: 15000,
+  });
+
+  assert.equal(result.code, '778899');
+  assert.deepEqual(api.getCalls(), [
+    'inbox',
+    'refresh',
+    'open:first',
+    'delete:first',
+    'inbox',
+    'refresh',
+    'open:second',
+  ]);
 });
 
 test('handlePollEmail deletes the first step 10 2925 mail when it has no code', async () => {
