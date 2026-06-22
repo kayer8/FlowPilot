@@ -215,6 +215,8 @@ const LOGIN_CODE_ONLY_ACTION_PATTERN = /one[-\s]*time|passcode|use\s+(?:a\s+)?co
 const RESEND_VERIFICATION_CODE_PATTERN = /重新发送(?:验证码)?|再次发送(?:验证码)?|重发(?:验证码)?|未收到(?:验证码|邮件)|(?:コード|メール|確認コード|認証コード)(?:を)?再送信|再送信|新しい(?:コード|確認コード|認証コード)|届かない|受信していません|resend(?:\s+code)?|send\s+(?:a\s+)?new\s+code|send\s+(?:it\s+)?again|request\s+(?:a\s+)?new\s+code|didn'?t\s+receive/i;
 const PHONE_RESEND_SERVER_ERROR_PREFIX = 'PHONE_RESEND_SERVER_ERROR::';
 const CONTACT_VERIFICATION_SERVER_ERROR_PATTERN = /this\s+page\s+isn['’]?t\s+working|该网页无法正常运作|currently\s+unable\s+to\s+handle\s+this\s+request|http\s+error\s+500|500\s+internal\s+server\s+error/i;
+const SIGNUP_ACCOUNT_CREATION_FAILED_PATTERN = /创建(?:账户|帐号|账号)失败(?:，|\s|,)*(?:请重试)?|无法创建(?:账户|帐号|账号)|アカウント(?:の)?作成(?:に)?失敗|アカウントを作成できません|couldn'?t\s+create\s+(?:your\s+)?account|unable\s+to\s+create\s+(?:your\s+)?account|failed\s+to\s+create\s+(?:your\s+)?account/i;
+const SIGNUP_PASSWORD_EDIT_IDENTIFIER_PATTERN = /^编辑$|^Edit$|変更|修正/i;
 
 function isVisibleElement(el) {
   if (!el) return false;
@@ -260,6 +262,21 @@ function getActionText(el) {
     .join(' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+function getNormalizedVisibleText(value = '') {
+  return String(value || '').replace(/\s+/g, ' ').trim();
+}
+
+function isSignupAccountCreationFailedText(text = '') {
+  const normalizedText = getNormalizedVisibleText(text);
+  if (!normalizedText) {
+    return false;
+  }
+  const pattern = typeof SIGNUP_ACCOUNT_CREATION_FAILED_PATTERN !== 'undefined'
+    ? SIGNUP_ACCOUNT_CREATION_FAILED_PATTERN
+    : /创建(?:账户|帐号|账号)失败(?:，|\s|,)*(?:请重试)?|无法创建(?:账户|帐号|账号)|couldn'?t\s+create\s+(?:your\s+)?account|unable\s+to\s+create\s+(?:your\s+)?account|failed\s+to\s+create\s+(?:your\s+)?account/i;
+  return pattern.test(normalizedText);
 }
 
 function isActionEnabled(el) {
@@ -654,6 +671,88 @@ function findSignupUsePhoneTrigger() {
     return SIGNUP_SWITCH_TO_PHONE_PATTERN.test(text)
       || (SIGNUP_SWITCH_ACTION_PATTERN.test(text) && SIGNUP_PHONE_ACTION_PATTERN.test(text));
   }) || null;
+}
+
+function getSignupPasswordAccountCreationFailedText() {
+  const messages = [];
+  const selectors = [
+    '.react-aria-FieldError',
+    '[slot="errorMessage"]',
+    '[id$="-error"]',
+    '[data-invalid="true"] + *',
+    '[aria-invalid="true"] + *',
+    '[class*="error"]',
+    '[role="alert"]',
+  ];
+
+  for (const selector of selectors) {
+    for (const el of Array.from(document.querySelectorAll(selector))) {
+      if (!isVisibleElement(el)) {
+        continue;
+      }
+      const text = getNormalizedVisibleText(el.textContent || '');
+      if (isSignupAccountCreationFailedText(text)) {
+        messages.push(text);
+      }
+    }
+  }
+
+  const passwordInput = getSignupPasswordInput();
+  const wrapper = passwordInput?.closest?.('form, main, section, [data-rac], [role="group"], div') || document.body;
+  const wrapperText = getNormalizedVisibleText(wrapper?.textContent || '');
+  if (isSignupAccountCreationFailedText(wrapperText)) {
+    messages.push(wrapperText);
+  }
+
+  const pageText = getNormalizedVisibleText(document.body?.innerText || document.body?.textContent || '');
+  if (isSignupAccountCreationFailedText(pageText)) {
+    messages.push(pageText);
+  }
+
+  return messages[0] || '';
+}
+
+function findSignupPasswordEditIdentifierButton() {
+  const candidates = document.querySelectorAll(
+    'button, a, [role="button"], [role="link"], input[type="button"], input[type="submit"]'
+  );
+  const editPattern = typeof SIGNUP_PASSWORD_EDIT_IDENTIFIER_PATTERN !== 'undefined'
+    ? SIGNUP_PASSWORD_EDIT_IDENTIFIER_PATTERN
+    : /^编辑$|^Edit$|変更|修正/i;
+
+  return Array.from(candidates).find((el) => {
+    if (!isVisibleElement(el) || !isActionEnabled(el)) {
+      return false;
+    }
+    const text = getActionText(el);
+    if (!text || !editPattern.test(text)) {
+      return false;
+    }
+    const context = getNormalizedVisibleText(
+      el.closest?.('form, main, section, [data-rac], [role="group"], div')?.textContent
+      || document.body?.textContent
+      || ''
+    );
+    return /手机号|手机号码|电话号码|phone|mobile|telephone|\+\s*\d/.test(context);
+  }) || null;
+}
+
+async function clickSignupPasswordEditIdentifierIfAvailable(step = 3) {
+  const editButton = findSignupPasswordEditIdentifierButton();
+  if (!editButton) {
+    return false;
+  }
+
+  await humanPause(250, 700);
+  const performOperationWithDelay = typeof getOperationDelayRunner === 'function'
+    ? getOperationDelayRunner()
+    : async (_metadata, operation) => operation();
+  await performOperationWithDelay({ stepKey: 'fill-password', kind: 'click', label: 'edit-signup-identifier-after-create-failed' }, async () => {
+    simulateClick(editButton);
+  });
+  log(`步骤 ${step}：检测到创建账户失败，已点击“编辑”准备更换注册手机号。`, 'warn', { step, stepKey: 'fill-password' });
+  await sleep(800);
+  return true;
 }
 
 function findSignupMoreOptionsTrigger() {
@@ -2906,6 +3005,11 @@ function getVisibleFieldErrorText() {
 }
 
 function getSignupPasswordFieldErrorText() {
+  const accountCreationFailedText = getSignupPasswordAccountCreationFailedText();
+  if (accountCreationFailedText) {
+    return accountCreationFailedText;
+  }
+
   const text = getVisibleFieldErrorText();
   if (text && SIGNUP_PHONE_PASSWORD_MISMATCH_PATTERN.test(text)) {
     return text;
@@ -4979,6 +5083,9 @@ async function prepareSignupVerificationFlow(payload = {}, timeout = 30000) {
     if (snapshot.state === 'password') {
       if (snapshot.passwordErrorText) {
         log(`${prepareLogLabel}：检测到密码页报错“${snapshot.passwordErrorText}”，当前轮将回到步骤 1 重新开始。`, 'warn');
+        if (isSignupAccountCreationFailedText(snapshot.passwordErrorText)) {
+          await clickSignupPasswordEditIdentifierIfAvailable(3);
+        }
         throw createSignupPhonePasswordMismatchError(snapshot.passwordErrorText);
       }
       if (!passwordPageDiagnosticsLogged) {

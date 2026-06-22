@@ -9428,10 +9428,13 @@ async function restartSignupPhonePasswordMismatchAttemptFromNode(nodeId, restart
     : (/PHONE_RESEND_SERVER_ERROR::|该网页无法正常运作|this\s+page\s+isn['’]?t\s+working|http\s+error\s+500|500\s+internal\s+server\s+error/i
       .test(errorMessage)
       ? '手机号验证码重发页面异常'
+      : (/创建(?:账户|帐号|账号)失败|无法创建(?:账户|帐号|账号)|couldn'?t\s+create\s+(?:your\s+)?account|unable\s+to\s+create\s+(?:your\s+)?account|failed\s+to\s+create\s+(?:your\s+)?account/i
+        .test(errorMessage)
+        ? '创建账户失败'
       : (/与此(?:电话|手机)号码相关联的帐户已存在|account\s+associated\s+with\s+this\s+phone\s+number\s+already\s+exists/i
         .test(errorMessage)
         ? '注册手机号异常'
-        : '手机号/密码不匹配')));
+        : '手机号/密码不匹配'))));
   const normalizedNodeId = String(nodeId || '').trim() || 'fetch-signup-code';
   await addLog(
     `节点 ${normalizedNodeId}：检测到${reasonLabel}，准备丢弃当前注册手机号并回到节点 open-chatgpt 重新开始（第 ${restartCount} 次重开）。${phoneSuffix}${emailSuffix}原因：${errorMessage}`,
