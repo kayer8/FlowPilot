@@ -184,6 +184,7 @@
           },
           email: {
             provider: '163',
+            xiaokapiPassword: '',
           },
           proxy: {
             enabled: false,
@@ -477,6 +478,11 @@
               ?? input?.mailProvider
               ?? defaults.services.email.provider
             ).trim() || defaults.services.email.provider,
+            xiaokapiPassword: String(
+              nested?.services?.email?.xiaokapiPassword
+              ?? input?.xiaokapiPassword
+              ?? defaults.services.email.xiaokapiPassword
+            ),
           },
           proxy: {
             enabled: Boolean(
@@ -608,6 +614,7 @@
       next.hostedCheckoutPhoneNumber = openaiState.plus?.hostedCheckoutPhoneNumber || '';
       next.plusHostedCheckoutOauthDelaySeconds = openaiState.plus?.plusHostedCheckoutOauthDelaySeconds ?? 3;
       next.mailProvider = normalizedState.services.email.provider;
+      next.xiaokapiPassword = normalizedState.services.email.xiaokapiPassword || '';
       next.ipProxyEnabled = normalizedState.services.proxy.enabled;
       next.ipProxyService = normalizedState.services.proxy.provider;
       next.ipProxyMode = normalizedState.services.proxy.mode;

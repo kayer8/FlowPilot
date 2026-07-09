@@ -484,6 +484,12 @@ test('generated email helper uses the regular temp email domain when random subd
   assert.match(requests[0].body.name, /^[a-z0-9]+$/);
 });
 
+test('background xiaokapi provider generates address through public temp email API', async () => {
+  const source = fs.readFileSync('background.js', 'utf8');
+  assert.match(source, /async function fetchXiaokapiEmailAddress/);
+  assert.match(source, /\/api\/new_address/);
+});
+
 test('generated email helper requests random subdomain creation while preserving the returned address', async () => {
   const api = loadGeneratedEmailHelpersApi();
   const requests = [];

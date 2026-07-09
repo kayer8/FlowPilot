@@ -24,6 +24,7 @@
       isMail2925LimitReachedError,
       isStopError,
       LUCKMAIL_PROVIDER,
+      XIAOKAPI_MAIL_PROVIDER = 'xiaokapi',
       YYDS_MAIL_PROVIDER = 'yyds-mail',
       MAIL_2925_VERIFICATION_INTERVAL_MS,
       MAIL_2925_VERIFICATION_MAX_ATTEMPTS,
@@ -31,6 +32,7 @@
       pollCloudMailVerificationCode,
       pollHotmailVerificationCode,
       pollLuckmailVerificationCode,
+      pollXiaokapiVerificationCode,
       pollYydsMailVerificationCode,
       reopenMail2925MailboxSession,
       sendToContentScript,
@@ -454,6 +456,7 @@
           ? state.email
           : (String(state?.step8VerificationTargetEmail || '').trim() || state.email),
         targetEmailHints: [],
+        ...(String(state?.xiaokapiPassword || '') ? { xiaokapiPassword: String(state.xiaokapiPassword) } : {}),
         mail2925MatchTargetEmail,
         maxAttempts: is2925Provider ? MAIL_2925_VERIFICATION_MAX_ATTEMPTS : 5,
         intervalMs: is2925Provider ? MAIL_2925_VERIFICATION_INTERVAL_MS : 3000,
@@ -1033,6 +1036,13 @@
           ...cleanPollOverrides,
         }, cleanPollOverrides, `轮询${getVerificationCodeLabel(step)}验证码邮箱`);
         return pollCloudMailVerificationCode(step, state, timedPoll.payload);
+      }
+      if (mail.provider === XIAOKAPI_MAIL_PROVIDER) {
+        const timedPoll = await applyMailPollingTimeBudget(step, {
+          ...getVerificationPollPayload(step, state),
+          ...cleanPollOverrides,
+        }, cleanPollOverrides, `轮询${getVerificationCodeLabel(step)}验证码邮箱`);
+        return pollXiaokapiVerificationCode(step, state, timedPoll.payload);
       }
       if (mail.provider === YYDS_MAIL_PROVIDER) {
         const timedPoll = await applyMailPollingTimeBudget(step, {

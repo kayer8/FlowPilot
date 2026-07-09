@@ -27,6 +27,7 @@ function detectScriptSource({
   ) return 'mail-163';
   if (hostname === 'mail.google.com') return 'gmail-mail';
   if (hostname === 'www.icloud.com' || hostname === 'www.icloud.com.cn') return 'icloud-mail';
+  if (hostname === 'mail.xiaokapi.cn') return 'xiaokapi-mail';
   if (url.includes('duckduckgo.com/email/settings/autofill')) return 'duck-mail';
   if (url.includes('chatgpt.com')) return 'chatgpt';
   if (url.includes("2925.com")) return "mail-2925";
@@ -562,6 +563,7 @@ function shouldReportReadyForFrame(source, isChildFrame) {
     'mail-163',
     'gmail-mail',
     'mail-2925',
+    'xiaokapi-mail',
     'inbucket-mail',
     'plus-checkout',
     'unknown-source',

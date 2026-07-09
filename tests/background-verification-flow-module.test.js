@@ -50,3 +50,38 @@ test('verification flow routes YYDS Mail provider to background poller', async (
   assert.equal(pollCalls[0].step, 4);
   assert.equal(pollCalls[0].payload.maxAttempts, 1);
 });
+
+test('verification flow routes Xiaokapi provider to background API poller', async () => {
+  const source = fs.readFileSync('background/verification-flow.js', 'utf8');
+  const globalScope = {};
+  const api = new Function('self', `${source}; return self.MultiPageBackgroundVerificationFlow;`)(globalScope);
+  const pollCalls = [];
+  const helpers = api.createVerificationFlowHelpers({
+    addLog: async () => {},
+    buildVerificationPollPayload: () => ({ maxAttempts: 1, intervalMs: 1 }),
+    getState: async () => ({}),
+    getTabId: async () => 1,
+    isStopError: () => false,
+    pollXiaokapiVerificationCode: async (step, state, payload) => {
+      pollCalls.push({ step, state, payload });
+      return { ok: true, code: '654321', emailTimestamp: 1, mailId: 'msg-2' };
+    },
+    sendToContentScript: async () => ({}),
+    setState: async () => {},
+    sleepWithStop: async () => {},
+    throwIfStopped: () => {},
+    XIAOKAPI_MAIL_PROVIDER: 'xiaokapi',
+  });
+
+  const result = await helpers.pollFreshVerificationCode(
+    4,
+    { mailProvider: 'xiaokapi' },
+    { provider: 'xiaokapi', label: 'Xiaokapi 邮箱' },
+    { disableTimeBudgetCap: true }
+  );
+
+  assert.equal(result.code, '654321');
+  assert.equal(pollCalls.length, 1);
+  assert.equal(pollCalls[0].step, 4);
+  assert.equal(pollCalls[0].payload.maxAttempts, 1);
+});

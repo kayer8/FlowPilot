@@ -104,6 +104,7 @@
           : ['verify', 'verification', 'code', '验证码', 'confirm', 'login'],
         targetEmail,
         targetEmailHints: buildTargetEmailHints(targetEmail),
+        ...(String(state?.xiaokapiPassword || '') ? { xiaokapiPassword: String(state.xiaokapiPassword) } : {}),
         mail2925MatchTargetEmail: shouldMatchMail2925TargetEmail(state),
         maxAttempts: mail2925Provider ? MAIL_2925_VERIFICATION_MAX_ATTEMPTS : 5,
         intervalMs: mail2925Provider ? MAIL_2925_VERIFICATION_INTERVAL_MS : 3000,

@@ -97,6 +97,22 @@ return { detectScriptSource };
   );
 });
 
+test('detectScriptSource maps Xiaokapi admin to xiaokapi mail source', () => {
+  const bundle = [extractFunction('detectScriptSource')].join('\n');
+  const api = new Function(`
+${bundle}
+return { detectScriptSource };
+`)();
+
+  assert.equal(
+    api.detectScriptSource({
+      url: 'https://mail.xiaokapi.cn/admin',
+      hostname: 'mail.xiaokapi.cn',
+    }),
+    'xiaokapi-mail'
+  );
+});
+
 test('detectScriptSource returns unknown-source for unrecognized pages', () => {
   const bundle = [extractFunction('detectScriptSource')].join('\n');
   const api = new Function(`

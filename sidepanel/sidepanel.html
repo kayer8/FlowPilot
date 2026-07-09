@@ -547,6 +547,7 @@
             <option value="inbucket">Inbucket（自定义主机）</option>
             <option value="2925">2925 邮箱 (2925.com)（推荐）</option>
             <option value="gmail">Gmail 邮箱 (mail.google.com)</option>
+            <option value="xiaokapi">Xiaokapi 邮箱 (mail.xiaokapi.cn)</option>
             <option value="cloudflare-temp-email">Cloudflare Temp Email（推荐）</option>
             <option value="cloudmail">Cloud Mail</option>
           </select>
@@ -557,6 +558,17 @@
         <span class="data-label">自定义号池</span>
         <textarea id="input-custom-mail-provider-pool" class="data-textarea"
           placeholder="每行一个注册邮箱，例如&#10;alias001@example.com&#10;alias002@example.com"></textarea>
+      </div>
+      <div class="data-row" id="row-xiaokapi-password" style="display:none;">
+          <span class="data-label">Xiaokapi Admin Auth</span>
+        <div class="input-with-icon">
+          <input type="password" id="input-xiaokapi-password" class="data-input data-input-with-icon"
+            placeholder="请输入 Xiaokapi Admin Auth" autocomplete="off" />
+          <button id="btn-toggle-xiaokapi-password" class="input-icon-btn" type="button"
+            data-password-toggle="input-xiaokapi-password" data-show-label="显示 Xiaokapi Admin Auth"
+            data-hide-label="隐藏 Xiaokapi Admin Auth" aria-label="显示 Xiaokapi Admin Auth"
+            title="显示 Xiaokapi Admin Auth"></button>
+        </div>
       </div>
       <div class="data-row" id="row-mail-2925-mode" style="display:none;">
         <span class="data-label">2925 模式</span>

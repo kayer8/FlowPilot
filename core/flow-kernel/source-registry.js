@@ -100,6 +100,21 @@
         { hostnames: ['2925.com', 'www.2925.com'] },
       ],
     },
+    'xiaokapi-mail': {
+      flowId: null,
+      kind: 'mail-provider',
+      label: 'Xiaokapi \u90ae\u7bb1',
+      readyPolicy: 'top-frame-only',
+      family: 'xiaokapi-mail-family',
+      driverId: 'content/xiaokapi-mail',
+      cleanupScopes: [],
+      detectionMatchers: [
+        { hostnames: ['mail.xiaokapi.cn'] },
+      ],
+      familyMatchers: [
+        { hostnames: ['mail.xiaokapi.cn'] },
+      ],
+    },
     'duck-mail': {
       flowId: null,
       kind: 'mail-provider',
@@ -145,6 +160,10 @@
     },
     'content/mail-2925': {
       sourceId: 'mail-2925',
+      commands: ['POLL_EMAIL'],
+    },
+    'content/xiaokapi-mail': {
+      sourceId: 'xiaokapi-mail',
       commands: ['POLL_EMAIL'],
     },
     'content/duck-mail': {

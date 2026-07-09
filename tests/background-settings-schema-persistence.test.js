@@ -564,6 +564,54 @@ function getRemovedKeys() {
   assert.equal(Object.prototype.hasOwnProperty.call(write, 'mailProvider'), false);
 });
 
+test('setPersistentSettings preserves Xiaokapi mail provider selection', async () => {
+  const api = buildHarness(`
+const persistedWrites = [];
+const removedKeys = [];
+const chrome = {
+  storage: {
+    local: {
+      async get() {
+        return {
+          settingsSchemaVersion: 5,
+          settingsState: {
+            activeFlowId: 'openai',
+            services: {
+              account: { customPassword: '' },
+              email: { provider: '163' },
+              proxy: { enabled: false, provider: '711proxy', mode: 'account' },
+            },
+            flows: {},
+          },
+        };
+      },
+      async remove(keys) {
+        removedKeys.push(...(Array.isArray(keys) ? keys : [keys]));
+      },
+      async set(payload) {
+        persistedWrites.push(JSON.parse(JSON.stringify(payload)));
+      },
+    },
+  },
+};
+function getPersistedWrites() {
+  return persistedWrites;
+}
+function getRemovedKeys() {
+  return removedKeys;
+}
+`);
+
+  const persisted = await api.setPersistentSettings({
+    mailProvider: 'xiaokapi',
+  });
+  const write = api.getPersistedWrites().at(-1);
+
+  assert.equal(persisted.mailProvider, 'xiaokapi');
+  assert.equal(persisted.settingsState.services.email.provider, 'xiaokapi');
+  assert.equal(write.settingsState.services.email.provider, 'xiaokapi');
+});
+
 test('setPersistentSettings mirrors flat schema updates without resetting other canonical settings', async () => {
   const api = buildHarness(`
 const persistedWrites = [];

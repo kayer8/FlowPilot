@@ -91,7 +91,7 @@ return { getMailConfig };
   });
 }
 
-test('normalizeMailProvider keeps icloud provider', () => {
+test('normalizeMailProvider keeps supported mail providers', () => {
   const bundle = extractFunction('normalizeMailProvider');
   const api = new Function(`
 const ICLOUD_PROVIDER = 'icloud';
@@ -99,6 +99,8 @@ const GMAIL_PROVIDER = 'gmail';
 const HOTMAIL_PROVIDER = 'hotmail-api';
 const LUCKMAIL_PROVIDER = 'luckmail-api';
 const CLOUDFLARE_TEMP_EMAIL_PROVIDER = 'cloudflare-temp-email';
+const CLOUD_MAIL_PROVIDER = 'cloudmail';
+const YYDS_MAIL_PROVIDER = 'yyds-mail';
 const PERSISTED_SETTING_DEFAULTS = { mailProvider: '163' };
 ${bundle}
 return { normalizeMailProvider };
@@ -106,6 +108,8 @@ return { normalizeMailProvider };
 
   assert.equal(api.normalizeMailProvider('icloud'), 'icloud');
   assert.equal(api.normalizeMailProvider('ICLOUD'), 'icloud');
+  assert.equal(api.normalizeMailProvider('xiaokapi'), 'xiaokapi');
+  assert.equal(api.normalizeMailProvider('XIAOKAPI'), 'xiaokapi');
 });
 
 test('getMailConfig returns icloud mail tab config with host preference', () => {

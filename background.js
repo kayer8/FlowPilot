@@ -422,6 +422,7 @@ const {
   getIcloudForwardMailConfig: getSharedIcloudForwardMailConfig,
   normalizeIcloudForwardMailProvider,
   normalizeIcloudTargetMailboxType,
+  XIAOKAPI_MAIL_PROVIDER,
 } = self.MailProviderUtils;
 const {
   isRecoverableStep9AuthFailure,
@@ -558,6 +559,8 @@ const CLOUDFLARE_TEMP_EMAIL_PROVIDER = 'cloudflare-temp-email';
 const CLOUDFLARE_TEMP_EMAIL_GENERATOR = 'cloudflare-temp-email';
 const CLOUD_MAIL_PROVIDER = 'cloudmail';
 const CLOUD_MAIL_GENERATOR = 'cloudmail';
+const XIAOKAPI_TEMP_EMAIL_BASE_URL = 'https://temp-email-api.xiaokapi.cn';
+const XIAOKAPI_TEMP_EMAIL_DOMAIN = 'xiaokapi.cn';
 const YYDS_MAIL_GENERATOR = YYDS_MAIL_PROVIDER;
 const CUSTOM_EMAIL_POOL_GENERATOR = 'custom-pool';
 const HOTMAIL_MAILBOXES = ['INBOX', 'Junk'];
@@ -2739,6 +2742,7 @@ function normalizeMailProvider(value = '') {
     case 'qq':
     case 'inbucket':
     case '2925':
+    case 'xiaokapi':
       return normalized;
     default:
       return PERSISTED_SETTING_DEFAULTS.mailProvider;
@@ -7040,6 +7044,134 @@ async function pollCloudflareTempEmailVerificationCode(step, state, pollPayload 
   }
 
   throw lastError || new Error(`步骤 ${step}：未在 Cloudflare Temp Email 中找到新的匹配验证码。`);
+}
+
+function getXiaokapiTempEmailConfig(state = {}) {
+  return {
+    baseUrl: XIAOKAPI_TEMP_EMAIL_BASE_URL,
+    adminAuth: String(state?.xiaokapiPassword || '').trim(),
+    customAuth: '',
+    domain: XIAOKAPI_TEMP_EMAIL_DOMAIN,
+  };
+}
+
+function ensureXiaokapiTempEmailConfig(state = {}, options = {}) {
+  const { requireAdminAuth = false } = options;
+  const config = getXiaokapiTempEmailConfig(state);
+  if (requireAdminAuth && !config.adminAuth) {
+    throw new Error('Xiaokapi 缺少 Admin Auth，请在侧边栏填写 Xiaokapi Admin Auth。');
+  }
+  return config;
+}
+
+async function fetchXiaokapiEmailAddress(state, options = {}) {
+  throwIfStopped();
+  const latestState = state || await getState();
+  const config = ensureXiaokapiTempEmailConfig(latestState);
+  const requestedName = String(options.localPart || options.name || '').trim().toLowerCase()
+    || generateCloudflareAliasLocalPart();
+  const result = await requestCloudflareTempEmailJson(config, '/api/new_address', {
+    method: 'POST',
+    payload: {
+      name: requestedName,
+      domain: config.domain,
+      cf_token: '',
+    },
+  });
+  const address = normalizeCloudflareTempEmailAddress(getCloudflareTempEmailAddressFromResponse(result));
+  if (!address) {
+    throw new Error('Xiaokapi 未返回可用邮箱地址。');
+  }
+
+  await persistRegistrationEmailState(latestState, address, {
+    source: 'generated:xiaokapi',
+    preserveAccountIdentity: Boolean(options?.preserveAccountIdentity),
+  });
+  await addLog(`Xiaokapi：已通过 API 生成 ${address}`, 'ok');
+  return address;
+}
+
+async function listXiaokapiTempEmailMessages(state, options = {}) {
+  const config = ensureXiaokapiTempEmailConfig(state, { requireAdminAuth: true });
+  const address = normalizeCloudflareTempEmailAddress(options.address);
+  const payload = await requestCloudflareTempEmailJson(config, '/admin/mails', {
+    method: 'GET',
+    searchParams: {
+      limit: Number(options.limit) || CLOUDFLARE_TEMP_EMAIL_DEFAULT_PAGE_SIZE,
+      offset: Number(options.offset) || 0,
+    },
+  });
+  const messages = normalizeCloudflareTempEmailMailApiMessages(payload).filter((message) => {
+    if (!address) return true;
+    const messageAddress = normalizeCloudflareTempEmailAddress(message.address);
+    const originalRecipient = normalizeCloudflareTempEmailAddress(message.originalRecipient);
+    return messageAddress === address || originalRecipient === address;
+  });
+  return { config, messages };
+}
+
+async function pollXiaokapiVerificationCode(step, state, pollPayload = {}) {
+  const latestState = state || await getState();
+  ensureXiaokapiTempEmailConfig(latestState, { requireAdminAuth: true });
+  const targetEmail = normalizeCloudflareTempEmailAddress(pollPayload.targetEmail)
+    || normalizeCloudflareTempEmailAddress(latestState.email);
+  if (!targetEmail) {
+    throw new Error('Xiaokapi 轮询前缺少目标邮箱地址，请先生成或填写注册邮箱。');
+  }
+
+  await addLog(`步骤 ${step}：正在通过 Xiaokapi Admin API 读取最新邮件：${targetEmail}...`, 'info');
+  const maxAttempts = Number(pollPayload.maxAttempts) || 5;
+  const intervalMs = Number(pollPayload.intervalMs) || 3000;
+  let lastError = null;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    throwIfStopped();
+    try {
+      const { messages } = await listXiaokapiTempEmailMessages(latestState, {
+        address: targetEmail,
+        limit: pollPayload.limit || CLOUDFLARE_TEMP_EMAIL_DEFAULT_PAGE_SIZE,
+        offset: pollPayload.offset || 0,
+      });
+      const matchResult = pickVerificationMessageWithTimeFallback(messages, {
+        afterTimestamp: pollPayload.filterAfterTimestamp || 0,
+        senderFilters: pollPayload.senderFilters || [],
+        subjectFilters: pollPayload.subjectFilters || [],
+        requiredKeywords: pollPayload.requiredKeywords || [],
+        codePatterns: pollPayload.codePatterns || [],
+        excludeCodes: pollPayload.excludeCodes || [],
+      });
+      const match = matchResult.match;
+
+      if (match?.code) {
+        if (matchResult.usedRelaxedFilters) {
+          const fallbackLabel = matchResult.usedTimeFallback ? '宽松匹配 + 时间回退' : '宽松匹配';
+          await addLog(`步骤 ${step}：严格规则未命中，已改用 ${fallbackLabel} 并命中 Xiaokapi 验证码。`, 'warn');
+        }
+        return {
+          ok: true,
+          code: match.code,
+          emailTimestamp: match.receivedAt || Date.now(),
+          mailId: match.message?.id || '',
+        };
+      }
+
+      lastError = new Error(`步骤 ${step}：暂未在 Xiaokapi 最新邮件中找到匹配验证码（${attempt}/${maxAttempts}）。`);
+      await addLog(lastError.message, attempt === maxAttempts ? 'warn' : 'info');
+      const sample = summarizeCloudflareTempEmailMessagesForLog(messages);
+      if (sample) {
+        await addLog(`步骤 ${step}：Xiaokapi 最新邮件样本：${sample}`, 'info');
+      }
+    } catch (err) {
+      lastError = err;
+      await addLog(`步骤 ${step}：Xiaokapi Admin API 轮询失败：${err.message}`, 'warn');
+    }
+
+    if (attempt < maxAttempts) {
+      await sleepWithStop(intervalMs);
+    }
+  }
+
+  throw lastError || new Error(`步骤 ${step}：未在 Xiaokapi 中找到新的匹配验证码。`);
 }
 
 async function getOpenIcloudHostPreference() {
@@ -12004,6 +12136,9 @@ async function fetchGeneratedEmail(state, options = {}) {
     ? YYDS_MAIL_GENERATOR
     : 'yyds-mail';
   const requestedMailProvider = normalizeMailProvider(options.mailProvider ?? currentState.mailProvider);
+  if (requestedMailProvider === XIAOKAPI_MAIL_PROVIDER) {
+    return fetchXiaokapiEmailAddress(currentState, options);
+  }
   if (requestedMailProvider === yydsMailProvider) {
     return fetchYydsMailAddress(currentState, options);
   }
@@ -13564,10 +13699,12 @@ const flowMailPollingService = self.MultiPageBackgroundFlowMailPolling?.createFl
   pollCloudMailVerificationCode,
   pollHotmailVerificationCode,
   pollLuckmailVerificationCode,
+  pollXiaokapiVerificationCode,
   pollYydsMailVerificationCode,
   reuseOrCreateTab,
   sendToMailContentScriptResilient,
   throwIfStopped,
+  XIAOKAPI_MAIL_PROVIDER,
   YYDS_MAIL_PROVIDER,
 });
 const verificationFlowHelpers = self.MultiPageBackgroundVerificationFlow?.createVerificationFlowHelpers({
@@ -13593,6 +13730,7 @@ const verificationFlowHelpers = self.MultiPageBackgroundVerificationFlow?.create
   isRetryableContentScriptTransportError,
   isStopError,
   LUCKMAIL_PROVIDER,
+  XIAOKAPI_MAIL_PROVIDER,
   YYDS_MAIL_PROVIDER,
   MAIL_2925_VERIFICATION_INTERVAL_MS,
   MAIL_2925_VERIFICATION_MAX_ATTEMPTS,
@@ -13600,6 +13738,7 @@ const verificationFlowHelpers = self.MultiPageBackgroundVerificationFlow?.create
   pollCloudMailVerificationCode,
   pollHotmailVerificationCode,
   pollLuckmailVerificationCode,
+  pollXiaokapiVerificationCode,
   pollYydsMailVerificationCode,
   reopenMail2925MailboxSession,
   sendToContentScript,
@@ -14502,6 +14641,9 @@ function getMailConfig(state) {
   }
   if (provider === yydsMailProvider) {
     return { provider: yydsMailProvider, label: 'YYDS Mail' };
+  }
+  if (provider === 'xiaokapi') {
+    return { provider: 'xiaokapi', label: 'Xiaokapi 邮箱' };
   }
   if (provider === '163') {
     return { source: 'mail-163', url: 'https://mail.163.com/js6/main.jsp?df=mail163_letter#module=mbox.ListModule%7C%7B%22fid%22%3A1%2C%22order%22%3A%22date%22%2C%22desc%22%3Atrue%7D', label: '163 邮箱' };

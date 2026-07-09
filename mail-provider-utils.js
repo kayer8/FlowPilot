@@ -11,6 +11,7 @@
 })(typeof self !== 'undefined' ? self : globalThis, function createMailProviderUtils() {
   const HOTMAIL_PROVIDER = 'hotmail-api';
   const GMAIL_PROVIDER = 'gmail';
+  const XIAOKAPI_MAIL_PROVIDER = 'xiaokapi';
   const YYDS_MAIL_PROVIDER = 'yyds-mail';
   const NETEASE_LIST_PATH = '/js6/main.jsp?df=mail163_letter#module=mbox.ListModule%7C%7B%22fid%22%3A1%2C%22order%22%3A%22date%22%2C%22desc%22%3Atrue%7D';
   const ICLOUD_TARGET_MAILBOX_TYPE_INBOX = 'icloud-inbox';
@@ -27,6 +28,7 @@
     const normalized = String(value || '').trim().toLowerCase();
     switch (normalized) {
       case HOTMAIL_PROVIDER:
+      case XIAOKAPI_MAIL_PROVIDER:
       case YYDS_MAIL_PROVIDER:
       case '163':
       case '163-vip':
@@ -81,6 +83,9 @@
     if (provider === YYDS_MAIL_PROVIDER) {
       return { provider: YYDS_MAIL_PROVIDER, label: 'YYDS Mail' };
     }
+    if (provider === XIAOKAPI_MAIL_PROVIDER) {
+      return { provider: XIAOKAPI_MAIL_PROVIDER, label: 'Xiaokapi 邮箱' };
+    }
     if (provider === '163') {
       return {
         source: 'mail-163',
@@ -126,6 +131,7 @@
   return {
     GMAIL_PROVIDER,
     HOTMAIL_PROVIDER,
+    XIAOKAPI_MAIL_PROVIDER,
     YYDS_MAIL_PROVIDER,
     getIcloudForwardMailConfig,
     getIcloudForwardMailProviderOptions,

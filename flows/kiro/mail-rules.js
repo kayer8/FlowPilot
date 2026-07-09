@@ -115,6 +115,7 @@
         subjectFilters: KIRO_AWS_SUBJECT_FILTERS,
         targetEmail,
         targetEmailHints: buildTargetEmailHints(targetEmail),
+        ...(cleanString(state?.xiaokapiPassword) ? { xiaokapiPassword: cleanString(state.xiaokapiPassword) } : {}),
         mail2925MatchTargetEmail: shouldMatchMail2925TargetEmail(state),
         maxAttempts: luckmailProvider
           ? 3

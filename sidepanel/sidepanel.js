@@ -264,6 +264,8 @@ const selectMailProvider = document.getElementById('select-mail-provider');
 const btnMailLogin = document.getElementById('btn-mail-login');
 const rowCustomMailProviderPool = document.getElementById('row-custom-mail-provider-pool');
 const inputCustomMailProviderPool = document.getElementById('input-custom-mail-provider-pool');
+const rowXiaokapiPassword = document.getElementById('row-xiaokapi-password');
+const inputXiaokapiPassword = document.getElementById('input-xiaokapi-password');
 const rowMail2925Mode = document.getElementById('row-mail-2925-mode');
 const rowMail2925PoolSettings = document.getElementById('row-mail2925-pool-settings');
 const mail2925ModeButtons = Array.from(document.querySelectorAll('[data-mail2925-mode]'));
@@ -1728,6 +1730,11 @@ const MAIL_PROVIDER_LOGIN_CONFIGS = {
   qq: {
     label: 'QQ 邮箱',
     url: 'https://wx.mail.qq.com/',
+    buttonLabel: '登录',
+  },
+  xiaokapi: {
+    label: 'Xiaokapi 邮箱',
+    url: 'https://mail.xiaokapi.cn/admin',
     buttonLabel: '登录',
   },
   'cloudflare-temp-email': {
@@ -5089,6 +5096,9 @@ function collectSettingsPayload() {
       customPassword: inputPassword.value,
     }),
     mailProvider: selectMailProvider.value,
+    xiaokapiPassword: typeof inputXiaokapiPassword !== 'undefined' && inputXiaokapiPassword
+      ? inputXiaokapiPassword.value
+      : '',
     mail2925Mode: getSelectedMail2925Mode(),
     mail2925UseAccountPool,
     currentMail2925AccountId: String(latestState?.currentMail2925AccountId || '').trim(),
@@ -11317,13 +11327,16 @@ function applySettingsState(state) {
     ? YYDS_MAIL_PROVIDER
     : 'yyds-mail';
   const restoredMailProvider = isCustomMailProvider(state?.mailProvider)
-    || [ICLOUD_PROVIDER, 'hotmail-api', GMAIL_PROVIDER, 'luckmail-api', yydsMailProvider, '163', '163-vip', '126', 'qq', 'inbucket', '2925', 'cloudflare-temp-email', 'cloudmail'].includes(String(state?.mailProvider || '').trim())
+    || [ICLOUD_PROVIDER, 'hotmail-api', GMAIL_PROVIDER, 'luckmail-api', yydsMailProvider, '163', '163-vip', '126', 'qq', 'inbucket', '2925', 'xiaokapi', 'cloudflare-temp-email', 'cloudmail'].includes(String(state?.mailProvider || '').trim())
     ? String(state?.mailProvider || '163').trim()
     : (String(state?.emailGenerator || '').trim().toLowerCase() === 'custom'
       || String(state?.emailGenerator || '').trim().toLowerCase() === 'manual'
       ? 'custom'
       : '163');
   selectMailProvider.value = restoredMailProvider;
+  if (typeof inputXiaokapiPassword !== 'undefined' && inputXiaokapiPassword) {
+    inputXiaokapiPassword.value = state?.xiaokapiPassword || '';
+  }
   setMail2925Mode(state?.mail2925Mode);
   {
     const restoredEmailGenerator = String(state?.emailGenerator || '').trim().toLowerCase();
@@ -12907,7 +12920,8 @@ function updateMailProviderUI() {
   const useCustomEmail = isCustomMailProvider();
   const useCustomMailProviderPool = useCustomEmail && usesCustomMailProviderPool(selectMailProvider.value);
   const useIcloudProvider = isIcloudMailProvider();
-  const useEmailGenerator = !useHotmail && !useLuckmail && !useYydsMail && !useCustomEmail && (!useGeneratedAlias || useGmail);
+  const useXiaokapiProvider = selectMailProvider.value === 'xiaokapi';
+  const useEmailGenerator = !useHotmail && !useLuckmail && !useYydsMail && !useCustomEmail && !useXiaokapiProvider && (!useGeneratedAlias || useGmail);
   const useCloudflareTempEmailProvider = selectMailProvider.value === 'cloudflare-temp-email';
   const useCloudMailProvider = selectMailProvider.value === 'cloudmail';
   const aliasUiCopy = useGeneratedAlias
@@ -12923,6 +12937,9 @@ function updateMailProviderUI() {
   }
   if (typeof rowCustomMailProviderPool !== 'undefined' && rowCustomMailProviderPool) {
     rowCustomMailProviderPool.style.display = useCustomEmail ? '' : 'none';
+  }
+  if (typeof rowXiaokapiPassword !== 'undefined' && rowXiaokapiPassword) {
+    rowXiaokapiPassword.style.display = useXiaokapiProvider ? '' : 'none';
   }
   rowEmailPrefix.style.display = useGeneratedAlias && !useMail2925AccountPool ? '' : 'none';
   const hotmailServiceMode = getSelectedHotmailServiceMode();
@@ -13102,6 +13119,9 @@ function updateMailProviderUI() {
   }
   if (autoHintText && useGmail && useGeneratedAlias) {
     autoHintText.textContent = '请先填写 Gmail 原邮箱，步骤 3 会自动生成 Gmail +tag 地址';
+  }
+  if (autoHintText && useXiaokapiProvider) {
+    autoHintText.textContent = '步骤 3 会通过 Xiaokapi API 生成邮箱；第 4/8 步会通过 Admin API 读取最新验证码。';
   }
   if (autoHintText && useGeneratedAlias && aliasUiCopy?.hint) {
     autoHintText.textContent = aliasUiCopy.hint;

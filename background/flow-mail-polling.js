@@ -83,10 +83,12 @@
       pollCloudMailVerificationCode = null,
       pollHotmailVerificationCode = null,
       pollLuckmailVerificationCode = null,
+      pollXiaokapiVerificationCode = null,
       pollYydsMailVerificationCode = null,
       reuseOrCreateTab = async () => null,
       sendToMailContentScriptResilient = null,
       throwIfStopped = () => {},
+      XIAOKAPI_MAIL_PROVIDER = 'xiaokapi',
       YYDS_MAIL_PROVIDER = 'yyds-mail',
     } = deps;
 
@@ -106,6 +108,10 @@
       [normalizeProviderId(CLOUD_MAIL_PROVIDER), {
         label: 'Cloud Mail',
         poll: pollCloudMailVerificationCode,
+      }],
+      [normalizeProviderId(XIAOKAPI_MAIL_PROVIDER), {
+        label: 'Xiaokapi',
+        poll: pollXiaokapiVerificationCode,
       }],
       [normalizeProviderId(YYDS_MAIL_PROVIDER), {
         label: 'YYDS Mail',
