@@ -345,6 +345,88 @@
       return `${prefix}-${stamp}-${random}`;
     }
 
+    function normalizePhoneSmsCost(value) {
+      const numeric = Number(value);
+      return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
+    }
+
+    function getPhoneSmsCostFromActivation(activation = null) {
+      if (!activation || typeof activation !== 'object' || Array.isArray(activation)) {
+        return null;
+      }
+      return normalizePhoneSmsCost(
+        activation.phoneSmsCost
+        ?? activation.smsCost
+        ?? activation.acquiredPrice
+        ?? activation.purchasePrice
+        ?? activation.cost
+        ?? activation.price
+        ?? activation.maxPrice
+      );
+    }
+
+    function resolvePhoneSmsCost(state = {}) {
+      const candidates = [
+        state.currentPhoneActivation,
+        state.signupPhoneActivation,
+        state.signupPhoneCompletedActivation,
+        state.reusablePhoneActivation,
+        state.phonePreferredActivation,
+      ];
+      for (const candidate of candidates) {
+        const cost = getPhoneSmsCostFromActivation(candidate);
+        if (cost !== null) {
+          return cost;
+        }
+      }
+      return normalizePhoneSmsCost(
+        state.phoneSmsCost
+        ?? state.smsCost
+        ?? state.signupPhoneCost
+        ?? state.currentPhoneActivationCost
+      );
+    }
+
+    function formatScaledPhoneSmsCost(cost) {
+      const numeric = normalizePhoneSmsCost(cost);
+      if (numeric === null) {
+        return '';
+      }
+      return String(Math.round(numeric * 7 * 10000) / 10000);
+    }
+
+    function formatChinaAccountRecordedTime(timestampMs = Date.now()) {
+      const date = new Date(timestampMs);
+      if (Number.isNaN(date.getTime())) {
+        return '';
+      }
+      const parts = new Intl.DateTimeFormat('zh-CN', {
+        timeZone: 'Asia/Shanghai',
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+      }).formatToParts(date).reduce((acc, part) => {
+        if (part.type !== 'literal') {
+          acc[part.type] = part.value;
+        }
+        return acc;
+      }, {});
+      return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
+    }
+
+    function buildSubmittedAccountName(baseName = '', state = {}) {
+      const normalizedBaseName = normalizeString(baseName);
+      const costText = formatScaledPhoneSmsCost(resolvePhoneSmsCost(state));
+      const timeText = formatChinaAccountRecordedTime();
+      if (!normalizedBaseName || !costText || !timeText) {
+        return normalizedBaseName;
+      }
+      return `${normalizedBaseName} | ${costText} | ${timeText}`;
+    }
+
     function normalizeCodexSessionObject(value) {
       return value && typeof value === 'object' && !Array.isArray(value) ? value : null;
     }
@@ -680,10 +762,11 @@
         throw new Error('SUB2API 返回的目标分组 ID 无效。');
       }
 
-      const accountName = resolvedEmail
+      const baseAccountName = resolvedEmail
         || flowEmail
         || normalizeString(state.sub2apiDraftName)
         || buildDraftAccountName(state.sub2apiGroupName || DEFAULT_SUB2API_GROUP_NAME);
+      const accountName = buildSubmittedAccountName(baseAccountName, state);
       const createPayload = {
         name: accountName,
         notes: '',

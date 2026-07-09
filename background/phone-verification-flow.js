@@ -1353,6 +1353,15 @@
             : normalizeCountryId(rawCountryId, fallbackCountryId)
         );
       const ignoredPhoneCodeKeys = normalizeStringList(record.ignoredPhoneCodeKeys);
+      const acquiredPrice = normalizeHeroSmsPrice(
+        record.phoneSmsCost
+        ?? record.smsCost
+        ?? record.acquiredPrice
+        ?? record.purchasePrice
+        ?? record.cost
+        ?? record.price
+        ?? record.maxPrice
+      );
       return {
         activationId,
         phoneNumber,
@@ -1366,10 +1375,33 @@
         ...(expiresAt > 0 ? { expiresAt } : {}),
         ...(statusAction ? { statusAction } : {}),
         ...(record.source ? { source: String(record.source || '').trim() } : {}),
+        ...(acquiredPrice !== null && acquiredPrice > 0 ? { phoneSmsCost: acquiredPrice } : {}),
         ...(record.phoneCodeReceived ? { phoneCodeReceived: true } : {}),
         ...(record.phoneCodeReceivedAt ? { phoneCodeReceivedAt: Math.max(0, Number(record.phoneCodeReceivedAt) || 0) } : {}),
         ...(ignoredPhoneCodeKeys.length ? { ignoredPhoneCodeKeys } : {}),
       };
+    }
+
+    function attachActivationAcquiredPrice(activation, price) {
+      const normalizedPrice = normalizeHeroSmsPrice(price);
+      if (normalizedPrice === null || normalizedPrice <= 0) {
+        return activation;
+      }
+      return {
+        ...activation,
+        phoneSmsCost: Math.round(normalizedPrice * 10000) / 10000,
+      };
+    }
+
+    function attachActivationAcquiredPriceHint(activation) {
+      const normalizedActivation = normalizeActivation(activation);
+      if (!normalizedActivation || normalizedActivation.phoneSmsCost) {
+        return normalizedActivation;
+      }
+      return attachActivationAcquiredPrice(
+        normalizedActivation,
+        getActivationAcquiredPriceHint(normalizedActivation)
+      );
     }
 
     function normalizeManualFreeReusablePhoneActivation(record) {
@@ -4975,7 +5007,7 @@
     }
 
     async function persistCurrentActivation(activation) {
-      const normalizedActivation = normalizeActivation(activation);
+      const normalizedActivation = attachActivationAcquiredPriceHint(activation);
       const updates = {
         [PHONE_ACTIVATION_STATE_KEY]: normalizedActivation || null,
         [PHONE_VERIFICATION_CODE_STATE_KEY]: '',
@@ -4990,7 +5022,7 @@
 
     async function persistReusableActivation(activation) {
       await setPhoneRuntimeState({
-        [REUSABLE_PHONE_ACTIVATION_STATE_KEY]: normalizeActivation(activation) || null,
+        [REUSABLE_PHONE_ACTIVATION_STATE_KEY]: attachActivationAcquiredPriceHint(activation) || null,
       });
     }
 
@@ -5005,7 +5037,7 @@
     }
 
     async function upsertReusableActivationPool(activation, options = {}) {
-      const normalized = normalizeActivation(activation);
+      const normalized = attachActivationAcquiredPriceHint(activation);
       if (!normalized) {
         return [];
       }
@@ -5371,7 +5403,7 @@
           throw new Error('步骤 2：接码平台返回的手机号订单无效。');
         }
         const countryConfig = resolveCountryConfigFromActivation(normalizedActivation, state);
-        const signupActivation = normalizeActivation({
+        const signupActivation = attachActivationAcquiredPriceHint({
           ...normalizedActivation,
           countryId: countryConfig?.id ?? normalizedActivation.countryId,
           countryLabel: normalizedActivation.countryLabel || countryConfig?.label || '',

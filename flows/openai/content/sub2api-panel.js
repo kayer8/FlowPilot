@@ -416,6 +416,97 @@ function buildDraftAccountName(groupName) {
   return `${prefix}-${stamp}-${random}`;
 }
 
+function normalizePhoneSmsCost(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) && numeric > 0 ? numeric : null;
+}
+
+function getPhoneSmsCostFromActivation(activation = null) {
+  if (!activation || typeof activation !== 'object' || Array.isArray(activation)) {
+    return null;
+  }
+  return normalizePhoneSmsCost(
+    activation.phoneSmsCost
+    ?? activation.smsCost
+    ?? activation.acquiredPrice
+    ?? activation.purchasePrice
+    ?? activation.cost
+    ?? activation.price
+    ?? activation.maxPrice
+  );
+}
+
+function resolvePhoneSmsCost(payload = {}, backgroundState = {}) {
+  const candidates = [
+    payload.currentPhoneActivation,
+    payload.signupPhoneActivation,
+    payload.signupPhoneCompletedActivation,
+    payload.reusablePhoneActivation,
+    payload.phonePreferredActivation,
+    backgroundState.currentPhoneActivation,
+    backgroundState.signupPhoneActivation,
+    backgroundState.signupPhoneCompletedActivation,
+    backgroundState.reusablePhoneActivation,
+    backgroundState.phonePreferredActivation,
+  ];
+  for (const candidate of candidates) {
+    const cost = getPhoneSmsCostFromActivation(candidate);
+    if (cost !== null) {
+      return cost;
+    }
+  }
+  return normalizePhoneSmsCost(
+    payload.phoneSmsCost
+    ?? payload.smsCost
+    ?? payload.signupPhoneCost
+    ?? payload.currentPhoneActivationCost
+    ?? backgroundState.phoneSmsCost
+    ?? backgroundState.smsCost
+    ?? backgroundState.signupPhoneCost
+    ?? backgroundState.currentPhoneActivationCost
+  );
+}
+
+function formatScaledPhoneSmsCost(cost) {
+  const numeric = normalizePhoneSmsCost(cost);
+  if (numeric === null) {
+    return '';
+  }
+  return String(Math.round(numeric * 7 * 10000) / 10000);
+}
+
+function formatChinaAccountRecordedTime(timestampMs = Date.now()) {
+  const date = new Date(timestampMs);
+  if (Number.isNaN(date.getTime())) {
+    return '';
+  }
+  const parts = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(date).reduce((acc, part) => {
+    if (part.type !== 'literal') {
+      acc[part.type] = part.value;
+    }
+    return acc;
+  }, {});
+  return `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}`;
+}
+
+function buildSubmittedAccountName(baseName = '', payload = {}, backgroundState = {}) {
+  const normalizedBaseName = String(baseName || '').trim();
+  const costText = formatScaledPhoneSmsCost(resolvePhoneSmsCost(payload, backgroundState));
+  const timeText = formatChinaAccountRecordedTime();
+  if (!normalizedBaseName || !costText || !timeText) {
+    return normalizedBaseName;
+  }
+  return `${normalizedBaseName} | ${costText} | ${timeText}`;
+}
+
 function extractStateFromAuthUrl(authUrl) {
   try {
     return new URL(authUrl).searchParams.get('state') || '';
@@ -642,10 +733,11 @@ async function step9_submitOpenAiCallback(payload = {}) {
   if (!groupIds.length) {
     throw new Error('SUB2API 返回的目标分组 ID 无效。');
   }
-  const accountName = resolvedEmail
+  const baseAccountName = resolvedEmail
     || flowEmail
     || String(payload.sub2apiDraftName || backgroundState.sub2apiDraftName || '').trim()
     || buildDraftAccountName(payload.sub2apiGroupName || backgroundState.sub2apiGroupName || SUB2API_DEFAULT_GROUP_NAME);
+  const accountName = buildSubmittedAccountName(baseAccountName, payload, backgroundState);
   const createPayload = {
     name: accountName,
     notes: '',

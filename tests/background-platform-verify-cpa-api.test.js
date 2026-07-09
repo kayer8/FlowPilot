@@ -321,6 +321,7 @@ test('platform verify module submits Plus visible step 13 to SUB2API via direct 
       payload: {
         localhostUrl: 'http://localhost:1455/auth/callback?code=callback-code&state=oauth-state',
         verifiedStatus: 'SUB2API 已创建账号 #11',
+        sub2apiCallbackVerified: true,
       },
     }]);
   } finally {
@@ -386,5 +387,67 @@ test('platform verify module forwards SUB2API account priority to direct create 
     assert.equal(createCall.body.priority, 2);
   } finally {
     globalThis.fetch = originalFetch;
+  }
+});
+
+test('platform verify module appends scaled phone sms cost and China time to SUB2API account name', async () => {
+  const originalFetch = globalThis.fetch;
+  const originalDateNow = Date.now;
+  const fetchCalls = [];
+  globalThis.fetch = async (url, options = {}) => {
+    const parsed = new URL(url);
+    const body = options.body ? JSON.parse(options.body) : null;
+    fetchCalls.push({ path: parsed.pathname, method: options.method || 'GET', body });
+
+    if (parsed.pathname === '/api/v1/auth/login') {
+      return createSub2ApiResponse({ code: 0, data: { access_token: 'admin-token' } });
+    }
+    if (parsed.pathname === '/api/v1/admin/openai/exchange-code') {
+      return createSub2ApiResponse({
+        code: 0,
+        data: {
+          access_token: 'openai-access',
+          refresh_token: 'openai-refresh',
+          email: 'flow@example.com',
+        },
+      });
+    }
+    if (parsed.pathname === '/api/v1/admin/accounts') {
+      return createSub2ApiResponse({ code: 0, data: { id: 11 } });
+    }
+    return createSub2ApiResponse({ code: 1, message: `unexpected path ${parsed.pathname}` }, 404);
+  };
+  Date.now = () => Date.parse('2026-07-09T13:30:00.000Z');
+
+  const api = loadStep10WithSub2Api();
+  const { deps } = createDeps({
+    getPanelMode: () => 'sub2api',
+    getTabId: async () => 91,
+    isTabAlive: async () => true,
+  });
+  const executor = api.createStep10Executor(deps);
+
+  try {
+    await executor.executeStep10({
+      panelMode: 'sub2api',
+      localhostUrl: 'http://localhost:1455/auth/callback?code=callback-code&state=oauth-state',
+      sub2apiUrl: 'https://sub.example/admin/accounts',
+      sub2apiEmail: 'admin@example.com',
+      sub2apiPassword: 'secret',
+      sub2apiSessionId: 'session-1',
+      sub2apiOAuthState: 'oauth-state',
+      sub2apiGroupId: 5,
+      currentPhoneActivation: {
+        activationId: 'activation-1',
+        phoneNumber: '+6612345',
+        cost: 0.05,
+      },
+    });
+
+    const createCall = fetchCalls.find((call) => call.path === '/api/v1/admin/accounts');
+    assert.equal(createCall.body.name, 'flow@example.com | 0.35 | 2026-07-09 21:30');
+  } finally {
+    globalThis.fetch = originalFetch;
+    Date.now = originalDateNow;
   }
 });

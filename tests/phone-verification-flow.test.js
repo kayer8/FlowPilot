@@ -155,6 +155,53 @@ test('signup phone helper persists signup runtime state without touching add-pho
   assert.ok(!setStateCalls.some((updates) => Object.prototype.hasOwnProperty.call(updates, 'currentPhoneActivation')));
 });
 
+test('signup phone helper persists acquired sms cost for later account naming', async () => {
+  const setStateCalls = [];
+  let currentState = {
+    heroSmsApiKey: 'demo-key',
+    signupMethod: 'phone',
+    accountIdentifierType: 'phone',
+  };
+  const helpers = api.createPhoneVerificationHelpers({
+    addLog: async () => {},
+    ensureStep8SignupPageReady: async () => {},
+    fetchImpl: async (url) => {
+      const parsedUrl = new URL(url);
+      const action = parsedUrl.searchParams.get('action');
+      if (action === 'getPrices') {
+        return {
+          ok: true,
+          text: async () => buildHeroSmsPricesPayload({ cost: 0.05 }),
+        };
+      }
+      if (action === 'getNumber') {
+        return {
+          ok: true,
+          text: async () => 'ACCESS_NUMBER:123456:66959916439',
+        };
+      }
+      throw new Error(`Unexpected HeroSMS action: ${action}`);
+    },
+    getState: async () => currentState,
+    sendToContentScriptResilient: async () => ({}),
+    setState: async (updates) => {
+      setStateCalls.push(updates);
+      currentState = {
+        ...currentState,
+        ...updates,
+      };
+    },
+    sleepWithStop: async () => {},
+    throwIfStopped: () => {},
+  });
+
+  const activation = await helpers.prepareSignupPhoneActivation(currentState);
+
+  assert.equal(activation.phoneSmsCost, 0.05);
+  assert.equal(currentState.signupPhoneActivation.phoneSmsCost, 0.05);
+  assert.equal(setStateCalls.at(-1).signupPhoneActivation.phoneSmsCost, 0.05);
+});
+
 test('signup phone helper buys a fresh number instead of using reuse entries', async () => {
   const actions = [];
   let currentState = {
@@ -4052,6 +4099,7 @@ test('phone verification helper reuses the current number first when code submis
     countryId: 52,
     successfulUses: 1,
     maxUses: 3,
+    phoneSmsCost: 0.08,
   });
 });
 

@@ -303,6 +303,33 @@ test('SUB2API step 10 creates account with configured account priority', async (
   assert.equal(createCall.body.priority, 3);
 });
 
+test('SUB2API panel appends scaled phone sms cost and China time to account name', async () => {
+  const fetchCalls = [];
+  const context = createSub2ApiPanelContext(fetchCalls);
+  vm.runInContext(`Date.now = () => ${Date.parse('2026-07-09T13:30:00.000Z')}`, context);
+
+  await vm.runInContext(`
+    step9_submitOpenAiCallback({
+      localhostUrl: 'http://localhost:1455/auth/callback?code=callback-code&state=oauth-state',
+      sub2apiUrl: 'https://sub.example/admin/accounts',
+      sub2apiEmail: 'admin@example.com',
+      sub2apiPassword: 'secret',
+      sub2apiGroupName: 'codex',
+      sub2apiSessionId: 'session-1',
+      sub2apiOAuthState: 'oauth-state',
+      sub2apiGroupId: 5,
+      currentPhoneActivation: {
+        activationId: 'activation-1',
+        phoneNumber: '+6612345',
+        cost: 0.05
+      }
+    })
+  `, context);
+
+  const createCall = fetchCalls.find((call) => call.path === '/api/v1/admin/accounts');
+  assert.equal(createCall.body.name, 'flow@example.com | 0.35 | 2026-07-09 21:30');
+});
+
 test('SUB2API account priority must be an integer greater than or equal to 1', async () => {
   const fetchCalls = [];
   const context = createSub2ApiPanelContext(fetchCalls);
