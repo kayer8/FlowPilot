@@ -81,6 +81,7 @@ const SETTINGS_SCHEMA_VIEW_KEYS = Object.freeze([
   'plusPaymentMethod',
   'plusAccountAccessStrategy',
   'mailProvider',
+  'xiaokapiPassword',
   'ipProxyEnabled',
   'ipProxyService',
   'ipProxyMode',
@@ -98,6 +99,7 @@ const PERSISTED_SETTING_DEFAULTS = {
   plusAccountAccessStrategy: 'oauth',
   phoneVerificationEnabled: false,
   mailProvider: '163',
+  xiaokapiPassword: '',
   ipProxyEnabled: false,
   ipProxyService: '711proxy',
   ipProxyMode: 'account',
@@ -604,12 +606,17 @@ function getRemovedKeys() {
 
   const persisted = await api.setPersistentSettings({
     mailProvider: 'xiaokapi',
+    xiaokapiPassword: 'admin-secret',
   });
   const write = api.getPersistedWrites().at(-1);
 
   assert.equal(persisted.mailProvider, 'xiaokapi');
+  assert.equal(persisted.xiaokapiPassword, 'admin-secret');
   assert.equal(persisted.settingsState.services.email.provider, 'xiaokapi');
+  assert.equal(persisted.settingsState.services.email.xiaokapiPassword, 'admin-secret');
   assert.equal(write.settingsState.services.email.provider, 'xiaokapi');
+  assert.equal(write.settingsState.services.email.xiaokapiPassword, 'admin-secret');
+  assert.ok(api.getRemovedKeys().includes('xiaokapiPassword'));
 });
 
 test('setPersistentSettings mirrors flat schema updates without resetting other canonical settings', async () => {

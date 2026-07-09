@@ -56,12 +56,14 @@ test('legacy settings importer converts flat legacy keys into canonical settings
     fromStep: 2,
     toStep: 9,
   });
+  assert.deepEqual(imported.stepExecutionRangeByFlow, {
+    kiro: { enabled: true, fromStep: 2, toStep: 9 },
+  });
   assert.equal(Object.prototype.hasOwnProperty.call(imported, 'kiroRuntime'), false);
   assert.deepEqual(imported.legacyFieldHits.sort(), [
     'kiroRuntime',
     'kiroTargetId',
     'panelMode',
-    'stepExecutionRangeByFlow',
   ]);
 });
 
@@ -83,4 +85,42 @@ test('legacy settings importer preserves canonical settingsState without reintro
 
   assert.deepEqual(imported.settingsState, canonicalState);
   assert.deepEqual(imported.legacyFieldHits, []);
+});
+
+test('legacy settings importer keeps flat exported settings alongside canonical settingsState', () => {
+  const { flowRegistry, settingsSchema, importer } = loadImporterApi();
+  const schema = settingsSchema.createSettingsSchema({ flowRegistry });
+  const importerApi = importer.createSettingsImporter({
+    flowRegistry,
+    settingsSchemaApi: schema,
+  });
+
+  const imported = importerApi.importSettings({
+    settingsSchemaVersion: 5,
+    mailProvider: 'xiaokapi',
+    xiaokapiPassword: 'admin-secret',
+    cloudflareTempEmailBaseUrl: 'https://temp-email-api.example.com',
+    cloudflareTempEmailAdminAuth: 'cf-admin-secret',
+    yydsMailBaseUrl: 'https://yyds.example.com/v1',
+    settingsState: {
+      activeFlowId: 'openai',
+      services: {
+        account: { customPassword: 'AccountSecret123' },
+        email: {
+          provider: 'xiaokapi',
+          xiaokapiPassword: 'admin-secret',
+        },
+        proxy: { enabled: false, provider: '711proxy', mode: 'account' },
+      },
+      flows: {},
+    },
+  });
+
+  assert.equal(imported.mailProvider, 'xiaokapi');
+  assert.equal(imported.xiaokapiPassword, 'admin-secret');
+  assert.equal(imported.cloudflareTempEmailBaseUrl, 'https://temp-email-api.example.com');
+  assert.equal(imported.cloudflareTempEmailAdminAuth, 'cf-admin-secret');
+  assert.equal(imported.yydsMailBaseUrl, 'https://yyds.example.com/v1');
+  assert.equal(imported.settingsState.services.email.provider, 'xiaokapi');
+  assert.equal(imported.settingsState.services.email.xiaokapiPassword, 'admin-secret');
 });

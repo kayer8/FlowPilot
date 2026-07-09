@@ -193,7 +193,7 @@ test('collectSettingsPayload omits custom password and local sync settings in co
   const bundle = extractFunction('collectSettingsPayload');
 
   const api = new Function('normalizeIcloudTargetMailboxType', 'normalizeIcloudForwardMailProvider', `
-let latestState = { accountContributionEnabled: true };
+let latestState = { accountContributionEnabled: true, xiaokapiPassword: 'admin-secret' };
 const window = {};
 const PLUS_ACCOUNT_ACCESS_STRATEGY_OAUTH = 'oauth';
 const PLUS_ACCOUNT_ACCESS_STRATEGY_SUB2API_CODEX_SESSION = 'sub2api_codex_session';
@@ -332,6 +332,7 @@ return {
   assert.equal('accountRunHistoryHelperBaseUrl' in contributionPayload, false);
   assert.equal(contributionPayload.phoneVerificationEnabled, true);
   assert.equal(contributionPayload.cloudflareTempEmailUseRandomSubdomain, true);
+  assert.equal(contributionPayload.xiaokapiPassword, 'admin-secret');
 
   api.setLatestState({ accountContributionEnabled: false });
   const normalPayload = api.collectSettingsPayload();

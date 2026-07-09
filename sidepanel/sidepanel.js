@@ -5098,7 +5098,7 @@ function collectSettingsPayload() {
     mailProvider: selectMailProvider.value,
     xiaokapiPassword: typeof inputXiaokapiPassword !== 'undefined' && inputXiaokapiPassword
       ? inputXiaokapiPassword.value
-      : '',
+      : String(latestState?.xiaokapiPassword || ''),
     mail2925Mode: getSelectedMail2925Mode(),
     mail2925UseAccountPool,
     currentMail2925AccountId: String(latestState?.currentMail2925AccountId || '').trim(),

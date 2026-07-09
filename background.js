@@ -1394,6 +1394,7 @@ const PERSISTED_SETTING_DEFAULTS = {
   phoneCodePollIntervalSeconds: DEFAULT_PHONE_CODE_POLL_INTERVAL_SECONDS,
   phoneCodePollMaxRounds: DEFAULT_PHONE_CODE_POLL_ROUNDS,
   mailProvider: '163',
+  xiaokapiPassword: '',
   mail2925Mode: DEFAULT_MAIL_2925_MODE,
   mail2925UseAccountPool: false,
   emailGenerator: 'duck',
@@ -1498,6 +1499,7 @@ const SETTINGS_SCHEMA_VIEW_KEYS = Object.freeze([
   'hostedCheckoutPhoneNumber',
   'plusHostedCheckoutOauthDelaySeconds',
   'mailProvider',
+  'xiaokapiPassword',
   'ipProxyEnabled',
   'ipProxyService',
   'ipProxyMode',
@@ -3392,6 +3394,8 @@ function normalizePersistentSettingValue(key, value) {
       return normalizePhoneCodePollMaxRounds(value, DEFAULT_PHONE_CODE_POLL_ROUNDS);
     case 'mailProvider':
       return normalizeMailProvider(value);
+    case 'xiaokapiPassword':
+      return String(value || '');
     case 'mail2925Mode':
       return normalizeMail2925Mode(value);
     case 'mail2925UseAccountPool':
@@ -3803,6 +3807,7 @@ function buildSettingsStatePatchFromFlatUpdates(updates = {}) {
   assignIfUpdated('plusPaymentMethod', ['flows', 'openai', 'plus', 'plusPaymentMethod']);
   assignIfUpdated('plusAccountAccessStrategy', ['flows', 'openai', 'plus', 'plusAccountAccessStrategy']);
   assignIfUpdated('mailProvider', ['services', 'email', 'provider']);
+  assignIfUpdated('xiaokapiPassword', ['services', 'email', 'xiaokapiPassword']);
   assignIfUpdated('ipProxyEnabled', ['services', 'proxy', 'enabled']);
   assignIfUpdated('ipProxyService', ['services', 'proxy', 'provider']);
   assignIfUpdated('ipProxyMode', ['services', 'proxy', 'mode']);

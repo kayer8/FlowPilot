@@ -5,7 +5,6 @@
     'panelMode',
     'openaiIntegrationTargetId',
     'kiroTargetId',
-    'stepExecutionRangeByFlow',
     'kiroRuntime',
   ]);
 
@@ -120,8 +119,13 @@
       const normalizedState = settingsSchemaApi.normalizeSettingsState(importInput, {
         activeFlowId: importInput.activeFlowId || importInput.flowId || deps.defaultFlowId,
       });
+      const importedFlatSettings = cloneValue(importInput);
+      LEGACY_TOP_LEVEL_KEYS.forEach((key) => {
+        delete importedFlatSettings[key];
+      });
 
       return {
+        ...importedFlatSettings,
         settingsSchemaVersion: Number(normalizedState.schemaVersion) || 0,
         settingsState: cloneValue(normalizedState),
         legacyFieldHits: collectLegacyFieldHits(input),
