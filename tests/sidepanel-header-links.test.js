@@ -48,45 +48,31 @@ function extractFunction(name) {
   return sidepanelSource.slice(start, end);
 }
 
-test('sidepanel html exposes header repo and releases entry points', () => {
+test('sidepanel html keeps repo link and hides release update entry points', () => {
   const html = fs.readFileSync('sidepanel/sidepanel.html', 'utf8');
 
-  assert.match(
-    html,
-    /id="btn-repo-home"[\s\S]*title="打开 GitHub 仓库"/
-  );
-  assert.match(
-    html,
-    /id="extension-update-status"[\s\S]*title="打开 GitHub Releases 页面"/
-  );
+  assert.match(html, /id="btn-repo-home"/);
+  assert.doesNotMatch(html, /id="extension-update-status"/);
+  assert.doesNotMatch(html, /id="btn-release-log"/);
+  assert.doesNotMatch(html, /id="update-section"/);
+  assert.doesNotMatch(html, /<script src="update-service\.js"><\/script>/);
 });
 
-test('header link helpers resolve repo and releases urls', () => {
+test('header link helper opens repository url without update service', () => {
   const bundle = [
     extractFunction('getRepositoryHomeUrl'),
-    extractFunction('getReleaseListUrl'),
     extractFunction('openRepositoryHomePage'),
-    extractFunction('openReleaseListPage'),
   ].join('\n');
 
   const api = new Function(`
 const opened = [];
-const sidepanelUpdateService = {
-  releasesPageUrl: 'https://github.com/example/project/releases',
-};
-let currentReleaseSnapshot = null;
 function openExternalUrl(url) {
   opened.push(url);
 }
 ${bundle}
 return {
   getRepositoryHomeUrl,
-  getReleaseListUrl,
   openRepositoryHomePage,
-  openReleaseListPage,
-  setSnapshot(snapshot) {
-    currentReleaseSnapshot = snapshot;
-  },
   getOpened() {
     return opened;
   },
@@ -95,21 +81,12 @@ return {
 
   assert.equal(
     api.getRepositoryHomeUrl(),
-    'https://github.com/example/project'
-  );
-  assert.equal(
-    api.getReleaseListUrl(),
-    'https://github.com/example/project/releases'
+    'https://github.com/QLHazyCoder/FlowPilot'
   );
 
-  api.setSnapshot({
-    releasesPageUrl: 'https://github.com/example/project/releases',
-  });
   api.openRepositoryHomePage();
-  api.openReleaseListPage();
 
   assert.deepEqual(api.getOpened(), [
-    'https://github.com/example/project',
-    'https://github.com/example/project/releases',
+    'https://github.com/QLHazyCoder/FlowPilot',
   ]);
 });

@@ -12738,10 +12738,6 @@ async function ensureAutoEmailReady(targetRun, totalRuns, attemptRuns) {
     return null;
   }
 
-  if (currentState.email) {
-    return currentState.email;
-  }
-
   if (isCustomMailProvider(currentState)) {
     const poolSize = getCustomMailProviderPool(currentState).length;
     if (poolSize > 0) {
@@ -12771,6 +12767,10 @@ async function ensureAutoEmailReady(targetRun, totalRuns, attemptRuns) {
   }
 
   if (shouldUseCustomRegistrationEmail(currentState)) {
+    if (currentState.email) {
+      return currentState.email;
+    }
+
     await addLog(`=== 目标 ${targetRun}/${totalRuns} 轮已暂停：请先填写自定义注册邮箱，然后继续 ===`, 'warn');
     await broadcastAutoRunStatus('waiting_email', {
       currentRun: targetRun,
@@ -12896,10 +12896,6 @@ async function ensureAutoEmailReady(targetRun, totalRuns, attemptRuns) {
     return null;
   }
 
-  if (currentState.email) {
-    return currentState.email;
-  }
-
   if (isCustomMailProvider(currentState)) {
     const poolSize = getCustomMailProviderPool(currentState).length;
     if (poolSize > 0) {
@@ -12929,6 +12925,10 @@ async function ensureAutoEmailReady(targetRun, totalRuns, attemptRuns) {
   }
 
   if (shouldUseCustomRegistrationEmail(currentState)) {
+    if (currentState.email) {
+      return currentState.email;
+    }
+
     await addLog(`=== 目标 ${targetRun}/${totalRuns} 轮已暂停：请先填写自定义注册邮箱，然后继续 ===`, 'warn');
     await broadcastAutoRunStatus('waiting_email', {
       currentRun: targetRun,

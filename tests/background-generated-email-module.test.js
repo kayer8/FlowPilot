@@ -490,6 +490,24 @@ test('background xiaokapi provider generates address through public temp email A
   assert.match(source, /\/api\/new_address/);
 });
 
+test('auto run does not short-circuit xiaokapi generation when a previous email exists', () => {
+  const source = fs.readFileSync('background.js', 'utf8');
+  const start = source.lastIndexOf('async function ensureAutoEmailReady');
+  assert.notEqual(start, -1, 'expected ensureAutoEmailReady to be defined');
+
+  const end = source.indexOf('\nasync function', start + 1);
+  const body = source.slice(start, end > start ? end : undefined);
+  const generatorIndex = body.indexOf('const generator = normalizeEmailGenerator');
+  const beforeGenerator = body.slice(0, generatorIndex);
+
+  assert.notEqual(generatorIndex, -1, 'expected generator fetch path to exist');
+  assert.doesNotMatch(
+    beforeGenerator,
+    /^  if \(currentState\.email\) \{/m,
+    'xiaokapi and other automatic generators must not reuse an existing email before fetching'
+  );
+});
+
 test('generated email helper requests random subdomain creation while preserving the returned address', async () => {
   const api = loadGeneratedEmailHelpersApi();
   const requests = [];

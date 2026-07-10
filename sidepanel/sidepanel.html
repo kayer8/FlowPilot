@@ -22,14 +22,6 @@
           <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
         </svg>
       </button>
-      <div class="header-version-block">
-        <div class="header-version-main">
-          <button id="extension-update-status" class="header-version-title header-version-link" type="button"
-          aria-label="打开 GitHub Releases 页面" title="打开 GitHub Releases 页面">FlowPilot0.0</button>
-          <button id="btn-release-log" class="header-link-btn" type="button" hidden>更新日志</button>
-        </div>
-        <span id="extension-version-meta" class="header-version-meta" hidden></span>
-      </div>
     </div>
     <div class="header-btns">
       <div class="run-group">
@@ -100,24 +92,6 @@
         aria-label="关闭更新提示" title="关闭更新提示">×</button>
     </div>
   </div>
-
-  <section id="update-section" hidden>
-    <div class="update-card">
-      <div class="update-card-header">
-        <div class="update-card-copy">
-          <span class="section-label">更新内容</span>
-          <div id="update-card-version" class="update-card-version"></div>
-          <p id="update-card-summary" class="update-card-summary"></p>
-        </div>
-        <div class="update-card-actions">
-          <button id="btn-ignore-release" class="btn btn-outline btn-sm" type="button" hidden>忽略本次更新</button>
-          <button id="btn-open-release" class="btn btn-primary btn-sm" type="button">前往更新</button>
-        </div>
-      </div>
-      <p class="update-card-reminder">一定请先导出配置，再执行更新</p>
-      <div id="update-release-list" class="update-release-list"></div>
-    </div>
-  </section>
 
   <section id="data-section">
     <div id="settings-card" class="data-card">
@@ -1913,7 +1887,6 @@
   <script src="../core/flow-kernel/settings-schema.js"></script>
   <script src="../core/flow-kernel/flow-capabilities.js"></script>
   <script src="../data/step-definitions.js"></script>
-  <script src="update-service.js"></script>
   <script src="contribution-content-update-service.js"></script>
   <script src="account-pool-ui.js"></script>
   <script src="form-dialog.js"></script>
