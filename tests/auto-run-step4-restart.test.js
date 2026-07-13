@@ -322,6 +322,226 @@ return {
   assert.equal(events.logs.some(({ message }) => /沿用当前邮箱回到节点 open-chatgpt 重新开始/.test(message)), true);
 });
 
+test('auto-run fetches a fresh Xiaokapi email when step 4 restarts from step 1', async () => {
+  const api = new Function(`
+const AUTO_STEP_DELAYS = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0, 10: 0 };
+const LAST_STEP_ID = 10;
+const FINAL_OAUTH_CHAIN_START_STEP = 7;
+const SIGNUP_METHOD_PHONE = 'phone';
+const XIAOKAPI_MAIL_PROVIDER = 'xiaokapi';
+const chrome = {
+  tabs: {
+    update: async () => {},
+  },
+  runtime: {
+    sendMessage: async () => {},
+  },
+};
+
+let remainingFailures = 1;
+let emailSequence = 0;
+let currentState = {
+  email: 'old@xiaokapi.cn',
+  password: 'Secret123!',
+  mailProvider: 'xiaokapi',
+  registrationEmailState: {
+    current: 'old@xiaokapi.cn',
+    previous: 'old@xiaokapi.cn',
+    source: 'generated:xiaokapi',
+    updatedAt: 1,
+  },
+  stepStatuses: {
+    1: 'pending',
+    2: 'pending',
+    3: 'pending',
+    4: 'pending',
+    5: 'pending',
+    6: 'pending',
+    7: 'pending',
+    8: 'pending',
+    9: 'pending',
+    10: 'pending',
+  },
+};
+const events = {
+  steps: [],
+  emails: [],
+  invalidations: [],
+  logs: [],
+  setStateCalls: [],
+};
+
+async function addLog(message, level = 'info') {
+  events.logs.push({ message, level });
+}
+
+async function ensureAutoEmailReady() {
+  const nextEmail = \`fresh-\${++emailSequence}@xiaokapi.cn\`;
+  events.emails.push({ before: currentState.email || null, generated: nextEmail });
+  await setState({
+    email: nextEmail,
+    registrationEmailState: {
+      current: nextEmail,
+      previous: nextEmail,
+      source: 'generated:xiaokapi',
+      updatedAt: Date.now(),
+    },
+  });
+  return nextEmail;
+}
+
+async function broadcastAutoRunStatus() {}
+async function ensureResolvedSignupMethodForRun() { return 'email'; }
+
+async function getState() {
+  return currentState;
+}
+
+async function setState(updates) {
+  currentState = {
+    ...currentState,
+    ...updates,
+    stepStatuses: updates.stepStatuses ? { ...updates.stepStatuses } : currentState.stepStatuses,
+    registrationEmailState: updates.registrationEmailState
+      ? { ...updates.registrationEmailState }
+      : currentState.registrationEmailState,
+  };
+  events.setStateCalls.push(updates);
+}
+
+function isStopError(error) {
+  return (error?.message || String(error || '')) === '流程已被用户停止。';
+}
+
+function isStepDoneStatus(status) {
+  return status === 'completed' || status === 'manual_completed' || status === 'skipped';
+}
+
+async function executeStepAndWait(step) {
+  events.steps.push(step);
+  if (step === 4 && remainingFailures > 0) {
+    remainingFailures -= 1;
+    throw new Error('步骤 4 提交验证码前页面异常。');
+  }
+}
+
+async function getTabId() {
+  return 1;
+}
+
+async function invalidateDownstreamAfterStepRestart(step, options = {}) {
+  events.invalidations.push({ step, options });
+  currentState = {
+    ...currentState,
+    password: null,
+    stepStatuses: {
+      1: currentState.stepStatuses[1] || 'completed',
+      2: 'pending',
+      3: 'pending',
+      4: 'pending',
+      5: 'pending',
+      6: 'pending',
+      7: 'pending',
+      8: 'pending',
+      9: 'pending',
+      10: 'pending',
+    },
+  };
+}
+
+function buildRegistrationEmailStateUpdates(state = {}, options = {}) {
+  const currentEmail = String(options.currentEmail || '').trim();
+  return {
+    email: currentEmail || null,
+    registrationEmailState: {
+      current: currentEmail,
+      previous: currentEmail,
+      source: currentEmail ? String(options.source || '').trim() : '',
+      updatedAt: currentEmail ? Date.now() : 0,
+    },
+  };
+}
+
+function getLoginAuthStateLabel(state) {
+  return state || 'unknown';
+}
+
+function getErrorMessage(error) {
+  return error?.message || String(error || '');
+}
+
+async function getLoginAuthStateFromContent() {
+  return { state: 'password_page', url: 'https://auth.openai.com/log-in' };
+}
+
+${bundle}
+
+return {
+  async run() {
+    await runAutoSequenceFromStep(1, {
+      targetRun: 1,
+      totalRuns: 1,
+      attemptRuns: 1,
+      continued: false,
+    });
+    return { events, currentState };
+  },
+};
+`)();
+
+  const { events, currentState } = await api.run();
+
+  assert.deepStrictEqual(
+    events.emails.map((entry) => entry.before),
+    ['old@xiaokapi.cn', null]
+  );
+  assert.deepStrictEqual(
+    events.emails.map((entry) => entry.generated),
+    ['fresh-1@xiaokapi.cn', 'fresh-2@xiaokapi.cn']
+  );
+  assert.equal(currentState.email, 'fresh-2@xiaokapi.cn');
+  assert.equal(
+    events.setStateCalls.some((updates) => updates.email === null && updates.registrationEmailState?.current === ''),
+    true
+  );
+});
+
+test('xiaokapi restart payload clears current email instead of restoring it', () => {
+  const api = new Function(`
+const XIAOKAPI_MAIL_PROVIDER = 'xiaokapi';
+function buildRegistrationEmailStateUpdates(state = {}, options = {}) {
+  const currentEmail = String(options.currentEmail || '').trim();
+  return {
+    email: currentEmail || null,
+    registrationEmailState: {
+      current: currentEmail,
+      previous: currentEmail,
+      source: currentEmail ? String(options.source || '').trim() : '',
+      updatedAt: currentEmail ? Date.now() : 0,
+    },
+  };
+}
+${extractFunction('getSignupPhonePasswordMismatchRestartPayload')}
+return { getSignupPhonePasswordMismatchRestartPayload };
+`)();
+
+  const result = api.getSignupPhonePasswordMismatchRestartPayload({
+    email: 'old@xiaokapi.cn',
+    password: 'Secret123!',
+    mailProvider: 'xiaokapi',
+    registrationEmailState: {
+      current: 'old@xiaokapi.cn',
+      previous: 'old@xiaokapi.cn',
+      source: 'generated:xiaokapi',
+      updatedAt: 1,
+    },
+  });
+
+  assert.equal(result.preservedEmail, 'old@xiaokapi.cn');
+  assert.equal(result.restorePayload.email, null);
+  assert.equal(result.restorePayload.registrationEmailState.current, '');
+});
+
 test('auto-run does not restart step 4 current attempt when user_already_exists is detected', async () => {
   const api = new Function(`
 const AUTO_STEP_DELAYS = { 1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 6: 0, 7: 0, 8: 0, 9: 0, 10: 0 };

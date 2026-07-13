@@ -9508,6 +9508,8 @@ function isSignupPhonePasswordMismatchFailure(error) {
 function getSignupPhonePasswordMismatchRestartPayload(preservedState = {}) {
   const preservedEmail = String(preservedState.email || '').trim();
   const preservedPassword = String(preservedState.password || '').trim();
+  const xiaokapiProvider = typeof XIAOKAPI_MAIL_PROVIDER === 'string' ? XIAOKAPI_MAIL_PROVIDER : 'xiaokapi';
+  const shouldRefreshXiaokapiEmail = String(preservedState.mailProvider || '').trim().toLowerCase() === xiaokapiProvider;
   const accountIdentifierType = String(preservedState.accountIdentifierType || '').trim().toLowerCase();
   const activeSignupPhoneNumber = String(
     preservedState.signupPhoneNumber
@@ -9525,7 +9527,14 @@ function getSignupPhonePasswordMismatchRestartPayload(preservedState = {}) {
     || accountIdentifierType === 'phone'
   );
   const restorePayload = {};
-  if (preservedEmail) restorePayload.email = preservedEmail;
+  if (shouldRefreshXiaokapiEmail) {
+    Object.assign(restorePayload, buildRegistrationEmailStateUpdates(preservedState, {
+      currentEmail: '',
+      source: 'generated:xiaokapi',
+    }));
+  } else if (preservedEmail) {
+    restorePayload.email = preservedEmail;
+  }
   if (preservedPassword) restorePayload.password = preservedPassword;
   if (shouldClearSignupPhoneRuntime) {
     restorePayload.signupPhoneNumber = '';
@@ -13435,18 +13444,33 @@ async function runAutoSequenceFromNodeGraph(startNodeId, context = {}) {
           await restartSignupPhonePasswordMismatchAttemptFromNode('fetch-signup-code', step4RestartCount, err);
         } else {
           const preservedState = await getState();
+          const xiaokapiProvider = typeof XIAOKAPI_MAIL_PROVIDER === 'string' ? XIAOKAPI_MAIL_PROVIDER : 'xiaokapi';
+          const shouldRefreshXiaokapiEmail = String(preservedState.mailProvider || '').trim().toLowerCase() === xiaokapiProvider;
           const preservedEmail = String(preservedState.email || '').trim();
           const preservedPassword = String(preservedState.password || '').trim();
-          const emailSuffix = preservedEmail ? `当前邮箱：${preservedEmail}；` : '';
+          const emailSuffix = preservedEmail
+            ? (shouldRefreshXiaokapiEmail ? `当前 Xiaokapi 邮箱将作废：${preservedEmail}；` : `当前邮箱：${preservedEmail}；`)
+            : '';
           await addLog(
-            `节点 fetch-signup-code：执行失败，准备沿用当前邮箱回到节点 open-chatgpt 重新开始（第 ${step4RestartCount} 次重开）。${emailSuffix}原因：${getErrorMessage(err)}`,
+            shouldRefreshXiaokapiEmail
+              ? `节点 fetch-signup-code：执行失败，准备作废当前 Xiaokapi 邮箱并回到节点 open-chatgpt 重新获取邮箱（第 ${step4RestartCount} 次重开）。${emailSuffix}原因：${getErrorMessage(err)}`
+              : `节点 fetch-signup-code：执行失败，准备沿用当前邮箱回到节点 open-chatgpt 重新开始（第 ${step4RestartCount} 次重开）。${emailSuffix}原因：${getErrorMessage(err)}`,
             'warn'
           );
           await invalidateDownstreamAfterAutoRunNodeRestart('open-chatgpt', {
-            logLabel: `节点 fetch-signup-code 报错后准备回到 open-chatgpt 沿用当前邮箱重试（第 ${step4RestartCount} 次重开）`,
+            logLabel: shouldRefreshXiaokapiEmail
+              ? `节点 fetch-signup-code 报错后准备回到 open-chatgpt 重新获取 Xiaokapi 邮箱重试（第 ${step4RestartCount} 次重开）`
+              : `节点 fetch-signup-code 报错后准备回到 open-chatgpt 沿用当前邮箱重试（第 ${step4RestartCount} 次重开）`,
           });
           const restorePayload = {};
-          if (preservedEmail) restorePayload.email = preservedEmail;
+          if (shouldRefreshXiaokapiEmail) {
+            Object.assign(restorePayload, buildRegistrationEmailStateUpdates(preservedState, {
+              currentEmail: '',
+              source: 'generated:xiaokapi',
+            }));
+          } else if (preservedEmail) {
+            restorePayload.email = preservedEmail;
+          }
           if (preservedPassword) restorePayload.password = preservedPassword;
           if (Object.keys(restorePayload).length) {
             await setState(restorePayload);
